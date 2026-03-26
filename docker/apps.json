@@ -5,7 +5,7 @@
     },
     {
         "url": "https://github.com/frappe/payments",
-        "branch": "main"
+        "branch": "develop"
     },
     {
         "url": "https://github.com/frappe/hrms",
