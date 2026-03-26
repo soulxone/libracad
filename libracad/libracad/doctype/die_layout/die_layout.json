@@ -1,0 +1,295 @@
+{
+  "actions": [],
+  "autoname": "DL-.YYYY.-.#####",
+  "creation": "2026-03-26 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "layout_name",
+    "status",
+    "col_header",
+    "corrugated_estimate",
+    "estimate_section",
+    "box_style",
+    "flute_type",
+    "est_col1",
+    "length_inside",
+    "width_inside",
+    "depth_inside",
+    "blank_section",
+    "blank_length",
+    "blank_col",
+    "blank_width",
+    "canvas_section",
+    "canvas_json",
+    "canvas_version",
+    "canvas_thumbnail",
+    "files_section",
+    "dxf_file",
+    "svg_file",
+    "files_col",
+    "pdf_file",
+    "die_maker_section",
+    "die_maker",
+    "die_maker_ref",
+    "die_cost",
+    "die_maker_col",
+    "die_ordered_date",
+    "die_received_date",
+    "notes_section",
+    "internal_notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "layout_name",
+      "fieldtype": "Data",
+      "label": "Layout Name",
+      "reqd": 1,
+      "bold": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Draft\nIn Review\nApproved\nSent to Die Maker\nArchived",
+      "default": "Draft",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "bold": 1
+    },
+    {
+      "fieldname": "col_header",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "corrugated_estimate",
+      "fieldtype": "Link",
+      "label": "Corrugated Estimate",
+      "options": "Corrugated Estimate",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "estimate_section",
+      "fieldtype": "Section Break",
+      "label": "Box Specification",
+      "collapsible": 0
+    },
+    {
+      "fieldname": "box_style",
+      "fieldtype": "Data",
+      "label": "Box Style",
+      "read_only": 1,
+      "fetch_from": "corrugated_estimate.box_style",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "flute_type",
+      "fieldtype": "Data",
+      "label": "Flute Type",
+      "read_only": 1,
+      "fetch_from": "corrugated_estimate.flute_type"
+    },
+    {
+      "fieldname": "est_col1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "length_inside",
+      "fieldtype": "Float",
+      "label": "Length (Inside)",
+      "read_only": 1,
+      "fetch_from": "corrugated_estimate.length_inside",
+      "precision": "4"
+    },
+    {
+      "fieldname": "width_inside",
+      "fieldtype": "Float",
+      "label": "Width (Inside)",
+      "read_only": 1,
+      "fetch_from": "corrugated_estimate.width_inside",
+      "precision": "4"
+    },
+    {
+      "fieldname": "depth_inside",
+      "fieldtype": "Float",
+      "label": "Depth (Inside)",
+      "read_only": 1,
+      "fetch_from": "corrugated_estimate.depth_inside",
+      "precision": "4"
+    },
+    {
+      "fieldname": "blank_section",
+      "fieldtype": "Section Break",
+      "label": "Blank Dimensions"
+    },
+    {
+      "fieldname": "blank_length",
+      "fieldtype": "Float",
+      "label": "Blank Length (in)",
+      "read_only": 1,
+      "fetch_from": "corrugated_estimate.blank_length",
+      "precision": "4"
+    },
+    {
+      "fieldname": "blank_col",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "blank_width",
+      "fieldtype": "Float",
+      "label": "Blank Width (in)",
+      "read_only": 1,
+      "fetch_from": "corrugated_estimate.blank_width",
+      "precision": "4"
+    },
+    {
+      "fieldname": "canvas_section",
+      "fieldtype": "Section Break",
+      "label": "Canvas Data",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "canvas_json",
+      "fieldtype": "Long Text",
+      "label": "Canvas JSON",
+      "hidden": 1
+    },
+    {
+      "fieldname": "canvas_version",
+      "fieldtype": "Int",
+      "label": "Canvas Version",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "canvas_thumbnail",
+      "fieldtype": "Attach Image",
+      "label": "Preview Thumbnail"
+    },
+    {
+      "fieldname": "files_section",
+      "fieldtype": "Section Break",
+      "label": "Export Files"
+    },
+    {
+      "fieldname": "dxf_file",
+      "fieldtype": "Attach",
+      "label": "DXF File"
+    },
+    {
+      "fieldname": "svg_file",
+      "fieldtype": "Attach",
+      "label": "SVG File"
+    },
+    {
+      "fieldname": "files_col",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "pdf_file",
+      "fieldtype": "Attach",
+      "label": "PDF File"
+    },
+    {
+      "fieldname": "die_maker_section",
+      "fieldtype": "Section Break",
+      "label": "Die Maker"
+    },
+    {
+      "fieldname": "die_maker",
+      "fieldtype": "Data",
+      "label": "Die Maker"
+    },
+    {
+      "fieldname": "die_maker_ref",
+      "fieldtype": "Data",
+      "label": "Die Maker Reference"
+    },
+    {
+      "fieldname": "die_cost",
+      "fieldtype": "Currency",
+      "label": "Die Cost"
+    },
+    {
+      "fieldname": "die_maker_col",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "die_ordered_date",
+      "fieldtype": "Date",
+      "label": "Die Ordered Date"
+    },
+    {
+      "fieldname": "die_received_date",
+      "fieldtype": "Date",
+      "label": "Die Received Date"
+    },
+    {
+      "fieldname": "notes_section",
+      "fieldtype": "Section Break",
+      "label": "Notes"
+    },
+    {
+      "fieldname": "internal_notes",
+      "fieldtype": "Text Editor",
+      "label": "Internal Notes"
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "links": [
+    {
+      "link_doctype": "Corrugated Estimate",
+      "link_fieldname": "corrugated_estimate"
+    }
+  ],
+  "modified": "2026-03-26 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "LibraCAD",
+  "name": "Die Layout",
+  "naming_rule": "Expression (old style)",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "create": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Sales User",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Sales Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "title_field": "layout_name",
+  "track_changes": 1
+}

@@ -1,0 +1,68 @@
+# Docker Compose override for LibraCAD local development
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Usage (from your frappe_docker directory):
+#
+#   Option A: Build custom image with LibraCAD baked in
+#   ─────────────────────────────────────────────────────
+#   1. Push libracad to GitHub (https://github.com/soulxone/libracad)
+#   2. Copy docker/apps.json to your frappe_docker/apps.json
+#   3. Run:
+#        export APPS_JSON_BASE64=$(base64 -w 0 apps.json)
+#        docker build \
+#          --build-arg APPS_JSON_BASE64=$APPS_JSON_BASE64 \
+#          --build-arg FRAPPE_BRANCH=version-15 \
+#          -t custom-erpnext:libracad \
+#          -f images/custom/Containerfile .
+#   4. Set in your .env:
+#        CUSTOM_IMAGE=custom-erpnext
+#        CUSTOM_TAG=libracad
+#   5. docker compose up -d
+#   6. Install the app on your site:
+#        docker compose exec backend bench --site <site> install-app libracad
+#        docker compose exec backend bench --site <site> migrate
+#        docker compose restart backend
+#
+#   Option B: Volume-mount for hot-reload development
+#   ──────────────────────────────────────────────────
+#   1. Run this compose file as an override:
+#        docker compose -f compose.yaml -f docker/docker-compose.libracad.yaml up -d
+#   2. This mounts the local libracad source into the container
+#   3. Changes to Python files take effect on restart
+#   4. Changes to JS/CSS require: docker compose exec backend bench build --app libracad
+#
+# ──────────────────────────────────────────────────────────────────────────────
+
+x-libracad-volume: &libracad_volume
+  # Mount local libracad app source into the container's apps directory
+  # Adjust the host path to match your local libracad location
+  - ${LIBRACAD_APP_PATH:-./libracad}:/home/frappe/frappe-bench/apps/libracad:ro
+
+services:
+  backend:
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      *libracad_volume
+
+  queue-short:
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      *libracad_volume
+
+  queue-long:
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      *libracad_volume
+
+  scheduler:
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      *libracad_volume
+
+  websocket:
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      *libracad_volume
+
+volumes:
+  sites:

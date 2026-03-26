@@ -1,0 +1,81 @@
+{
+  "charts": [],
+  "content": null,
+  "creation": "2026-03-26 00:00:00.000000",
+  "docstatus": 0,
+  "doctype": "Workspace",
+  "for_user": "",
+  "hide_custom": 0,
+  "icon": "tool",
+  "idx": 0,
+  "is_default": 0,
+  "is_standard": 1,
+  "label": "LibraCAD",
+  "links": [
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Die Layouts",
+      "link_count": 0,
+      "link_to": "Die Layout",
+      "link_type": "DocType",
+      "onboard": 1,
+      "type": "Link"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Die Layout Editor",
+      "link_count": 0,
+      "link_to": "die-layout-editor",
+      "link_type": "Page",
+      "onboard": 1,
+      "type": "Link"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Settings",
+      "link_count": 0,
+      "link_to": "LibraCAD Settings",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link"
+    }
+  ],
+  "modified": "2026-03-26 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "LibraCAD",
+  "name": "LibraCAD",
+  "number_cards": [],
+  "owner": "Administrator",
+  "parent_page": "",
+  "public": 1,
+  "restrict_to_domain": "",
+  "roles": [],
+  "sequence_id": 30,
+  "shortcuts": [
+    {
+      "color": "Blue",
+      "doc_view": "List",
+      "label": "All Die Layouts",
+      "link_to": "Die Layout",
+      "type": "DocType"
+    },
+    {
+      "color": "Green",
+      "doc_view": "",
+      "label": "New Die Layout",
+      "link_to": "Die Layout",
+      "type": "DocType",
+      "url": "/app/die-layout/new"
+    },
+    {
+      "color": "Grey",
+      "label": "LibraCAD Settings",
+      "link_to": "LibraCAD Settings",
+      "type": "DocType"
+    }
+  ],
+  "title": "LibraCAD"
+}

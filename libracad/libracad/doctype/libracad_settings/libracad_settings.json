@@ -1,0 +1,161 @@
+{
+  "actions": [],
+  "creation": "2026-03-26 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "issingle": 1,
+  "field_order": [
+    "general_section",
+    "default_units",
+    "grid_spacing",
+    "snap_tolerance",
+    "general_col",
+    "auto_generate_on_create",
+    "default_caliper_allowance",
+    "glue_tab_section",
+    "default_glue_tab_width",
+    "glue_tab_col",
+    "default_slot_depth_factor",
+    "colors_section",
+    "cut_line_color",
+    "score_line_color",
+    "colors_col",
+    "crease_line_color",
+    "dimension_color",
+    "annotation_color"
+  ],
+  "fields": [
+    {
+      "fieldname": "general_section",
+      "fieldtype": "Section Break",
+      "label": "General"
+    },
+    {
+      "fieldname": "default_units",
+      "fieldtype": "Select",
+      "label": "Default Units",
+      "options": "Inches\nMillimeters",
+      "default": "Inches"
+    },
+    {
+      "fieldname": "grid_spacing",
+      "fieldtype": "Float",
+      "label": "Grid Spacing",
+      "default": "0.25",
+      "description": "Grid spacing in default units"
+    },
+    {
+      "fieldname": "snap_tolerance",
+      "fieldtype": "Float",
+      "label": "Snap Tolerance",
+      "default": "0.125",
+      "description": "Snap distance in default units"
+    },
+    {
+      "fieldname": "general_col",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "auto_generate_on_create",
+      "fieldtype": "Check",
+      "label": "Auto-Generate Layout on Create",
+      "default": "1",
+      "description": "Automatically generate parametric die layout when creating from an estimate"
+    },
+    {
+      "fieldname": "default_caliper_allowance",
+      "fieldtype": "Float",
+      "label": "Caliper Allowance Factor",
+      "default": "2",
+      "description": "Multiplier for caliper in blank calculations"
+    },
+    {
+      "fieldname": "glue_tab_section",
+      "fieldtype": "Section Break",
+      "label": "Box Defaults"
+    },
+    {
+      "fieldname": "default_glue_tab_width",
+      "fieldtype": "Float",
+      "label": "Default Glue Tab Width (in)",
+      "default": "1.25"
+    },
+    {
+      "fieldname": "glue_tab_col",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "default_slot_depth_factor",
+      "fieldtype": "Float",
+      "label": "Slot Depth Factor",
+      "default": "0.5",
+      "description": "Fraction of depth for flap height"
+    },
+    {
+      "fieldname": "colors_section",
+      "fieldtype": "Section Break",
+      "label": "Layer Colors"
+    },
+    {
+      "fieldname": "cut_line_color",
+      "fieldtype": "Data",
+      "label": "Cut Line Color",
+      "default": "#FF0000"
+    },
+    {
+      "fieldname": "score_line_color",
+      "fieldtype": "Data",
+      "label": "Score Line Color",
+      "default": "#0000FF"
+    },
+    {
+      "fieldname": "colors_col",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "crease_line_color",
+      "fieldtype": "Data",
+      "label": "Crease Line Color",
+      "default": "#00CCCC"
+    },
+    {
+      "fieldname": "dimension_color",
+      "fieldtype": "Data",
+      "label": "Dimension Color",
+      "default": "#00AA00"
+    },
+    {
+      "fieldname": "annotation_color",
+      "fieldtype": "Data",
+      "label": "Annotation Color",
+      "default": "#888888"
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "links": [],
+  "modified": "2026-03-26 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "LibraCAD",
+  "name": "LibraCAD Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "System Manager",
+      "write": 1
+    },
+    {
+      "read": 1,
+      "role": "Sales User"
+    },
+    {
+      "read": 1,
+      "write": 1,
+      "role": "Sales Manager"
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC"
+}

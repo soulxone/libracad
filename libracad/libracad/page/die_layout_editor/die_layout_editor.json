@@ -1,0 +1,17 @@
+{
+  "creation": "2026-03-26 00:00:00.000000",
+  "docstatus": 0,
+  "doctype": "Page",
+  "icon": "tool",
+  "idx": 0,
+  "modified": "2026-03-26 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "LibraCAD",
+  "name": "die-layout-editor",
+  "owner": "Administrator",
+  "page_name": "die-layout-editor",
+  "roles": [],
+  "standard": "Yes",
+  "system_page": 0,
+  "title": "Die Layout Editor"
+}

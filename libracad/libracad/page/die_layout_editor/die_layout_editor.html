@@ -1,0 +1,156 @@
+<div class="dle-container" style="display:flex; flex-direction:column; height:calc(100vh - 60px); overflow:hidden;">
+    <!-- Toolbar -->
+    <div class="dle-toolbar" style="display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid #d1d8dd; background:#f7f7f7; flex-shrink:0;">
+        <button class="btn btn-xs btn-primary dle-btn-save">
+            <i class="fa fa-save"></i> Save
+        </button>
+        <div style="border-left:1px solid #d1d8dd; height:20px;"></div>
+        <button class="btn btn-xs btn-default dle-btn-undo" title="Undo (Ctrl+Z)">
+            <i class="fa fa-undo"></i>
+        </button>
+        <button class="btn btn-xs btn-default dle-btn-redo" title="Redo (Ctrl+Y)">
+            <i class="fa fa-repeat"></i>
+        </button>
+        <div style="border-left:1px solid #d1d8dd; height:20px;"></div>
+        <button class="btn btn-xs btn-default dle-btn-zoom-in" title="Zoom In">
+            <i class="fa fa-search-plus"></i>
+        </button>
+        <button class="btn btn-xs btn-default dle-btn-zoom-out" title="Zoom Out">
+            <i class="fa fa-search-minus"></i>
+        </button>
+        <button class="btn btn-xs btn-default dle-btn-zoom-fit" title="Zoom to Fit">
+            <i class="fa fa-expand"></i>
+        </button>
+        <div style="border-left:1px solid #d1d8dd; height:20px;"></div>
+        <button class="btn btn-xs btn-default dle-btn-grid" title="Toggle Grid (G)">
+            <i class="fa fa-th"></i> Grid
+        </button>
+        <button class="btn btn-xs btn-default dle-btn-snap" title="Toggle Snap">
+            <i class="fa fa-magnet"></i> Snap
+        </button>
+        <div style="border-left:1px solid #d1d8dd; height:20px;"></div>
+        <button class="btn btn-xs btn-success dle-btn-autogen" title="Auto-Generate from Estimate">
+            <i class="fa fa-magic"></i> Auto-Generate
+        </button>
+        <div style="flex:1;"></div>
+        <span class="dle-status-badge badge" style="font-size:11px;"></span>
+        <span class="dle-layout-name" style="font-weight:600; font-size:13px;"></span>
+        <div class="btn-group">
+            <button class="btn btn-xs btn-default dropdown-toggle" data-toggle="dropdown">
+                <i class="fa fa-download"></i> Export <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-right">
+                <li><a class="dle-export-dxf">DXF (for Die Maker)</a></li>
+                <li><a class="dle-export-svg">SVG (Preview)</a></li>
+                <li><a class="dle-export-png">PNG (Thumbnail)</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Main body: sidebar + canvas -->
+    <div class="dle-body" style="display:flex; flex:1; overflow:hidden;">
+        <!-- Sidebar -->
+        <div class="dle-sidebar" style="width:260px; flex-shrink:0; border-right:1px solid #d1d8dd; overflow-y:auto; background:#fafbfc; padding:10px;">
+
+            <!-- Tool Palette -->
+            <div class="dle-section">
+                <div class="dle-section-title" style="font-weight:600; font-size:11px; text-transform:uppercase; color:#8d99a6; margin-bottom:6px;">Tools</div>
+                <div class="dle-tool-palette" style="display:grid; grid-template-columns:1fr 1fr; gap:4px;">
+                    <button class="btn btn-xs btn-default dle-tool active" data-tool="select" title="Select (V)">
+                        <i class="fa fa-mouse-pointer"></i> Select
+                    </button>
+                    <button class="btn btn-xs btn-default dle-tool" data-tool="line" title="Line (L)">
+                        <i class="fa fa-minus"></i> Line
+                    </button>
+                    <button class="btn btn-xs btn-default dle-tool" data-tool="score" title="Score Line (S)" style="color:#0000FF;">
+                        <i class="fa fa-minus"></i> Score
+                    </button>
+                    <button class="btn btn-xs btn-default dle-tool" data-tool="cut" title="Cut Line" style="color:#FF0000;">
+                        <i class="fa fa-minus"></i> Cut
+                    </button>
+                    <button class="btn btn-xs btn-default dle-tool" data-tool="rect" title="Rectangle (R)">
+                        <i class="fa fa-square-o"></i> Rect
+                    </button>
+                    <button class="btn btn-xs btn-default dle-tool" data-tool="circle" title="Circle (C)">
+                        <i class="fa fa-circle-o"></i> Circle
+                    </button>
+                    <button class="btn btn-xs btn-default dle-tool" data-tool="dimension" title="Dimension (D)">
+                        <i class="fa fa-arrows-h"></i> Dim
+                    </button>
+                    <button class="btn btn-xs btn-default dle-tool" data-tool="slot" title="Slot Cut">
+                        <i class="fa fa-arrows-v"></i> Slot
+                    </button>
+                    <button class="btn btn-xs btn-default dle-tool" data-tool="gluetab" title="Glue Tab">
+                        <i class="fa fa-clipboard"></i> Glue Tab
+                    </button>
+                    <button class="btn btn-xs btn-default dle-tool" data-tool="handhole" title="Hand Hole">
+                        <i class="fa fa-hand-paper-o"></i> Hand Hole
+                    </button>
+                </div>
+            </div>
+
+            <hr style="margin:10px 0;">
+
+            <!-- Properties Panel -->
+            <div class="dle-section">
+                <div class="dle-section-title" style="font-weight:600; font-size:11px; text-transform:uppercase; color:#8d99a6; margin-bottom:6px;">Properties</div>
+                <div class="dle-properties" style="font-size:12px;">
+                    <div class="text-muted" style="padding:8px 0;">Select an object to see properties</div>
+                </div>
+            </div>
+
+            <hr style="margin:10px 0;">
+
+            <!-- Layers Panel -->
+            <div class="dle-section">
+                <div class="dle-section-title" style="font-weight:600; font-size:11px; text-transform:uppercase; color:#8d99a6; margin-bottom:6px;">Layers</div>
+                <div class="dle-layers" style="font-size:12px;">
+                    <label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer;">
+                        <input type="checkbox" class="dle-layer-toggle" data-layer="CUT" checked>
+                        <span style="width:12px; height:12px; background:#FF0000; display:inline-block; border-radius:2px;"></span>
+                        CUT
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer;">
+                        <input type="checkbox" class="dle-layer-toggle" data-layer="SCORE" checked>
+                        <span style="width:12px; height:12px; background:#0000FF; display:inline-block; border-radius:2px;"></span>
+                        SCORE
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer;">
+                        <input type="checkbox" class="dle-layer-toggle" data-layer="CREASE" checked>
+                        <span style="width:12px; height:12px; background:#00CCCC; display:inline-block; border-radius:2px;"></span>
+                        CREASE
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer;">
+                        <input type="checkbox" class="dle-layer-toggle" data-layer="DIMENSION" checked>
+                        <span style="width:12px; height:12px; background:#00AA00; display:inline-block; border-radius:2px;"></span>
+                        DIMENSION
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer;">
+                        <input type="checkbox" class="dle-layer-toggle" data-layer="ANNOTATION" checked>
+                        <span style="width:12px; height:12px; background:#888888; display:inline-block; border-radius:2px;"></span>
+                        ANNOTATION
+                    </label>
+                </div>
+            </div>
+
+            <hr style="margin:10px 0;">
+
+            <!-- Box Info Panel -->
+            <div class="dle-section">
+                <div class="dle-section-title" style="font-weight:600; font-size:11px; text-transform:uppercase; color:#8d99a6; margin-bottom:6px;">Box Info</div>
+                <div class="dle-box-info" style="font-size:12px;">
+                    <div class="text-muted">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canvas Area -->
+        <div class="dle-canvas-wrap" style="flex:1; position:relative; overflow:hidden; background:#e8e8e8;">
+            <canvas id="dle-canvas"></canvas>
+            <!-- Coordinate readout -->
+            <div class="dle-coords" style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.7); color:#fff; padding:2px 8px; border-radius:3px; font-size:11px; font-family:monospace;">
+                X: 0.00 Y: 0.00
+            </div>
+        </div>
+    </div>
+</div>
