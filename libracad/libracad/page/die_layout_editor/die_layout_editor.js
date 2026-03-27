@@ -76,6 +76,7 @@ DieLayoutEditor.prototype._init = function () {
     this._bindLayers();
     this._bindKeyboard();
     this._bindCanvasEvents();
+    this._bindTabs();
     this.on_show();
 };
 
@@ -1000,4 +1001,482 @@ DieLayoutEditor.prototype._generateHSC = function (L, W, D, caliper) {
     // SCORE: flap junctions
     addLine(x0, y1, x5, y1, "SCORE");
     addLine(x0, y2, x5, y2, "SCORE");
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TAB SYSTEM — Editor | Nesting | 3D Preview | Palletize
+// ═══════════════════════════════════════════════════════════════════════════
+
+DieLayoutEditor.prototype._bindTabs = function () {
+    var self = this;
+    this.$container.find(".dle-tab").on("click", function () {
+        var tab = $(this).data("tab");
+        self.$container.find(".dle-tab").removeClass("active").css({ "border-bottom": "none", "color": "#8d99a6", "font-weight": "normal" });
+        $(this).addClass("active").css({ "border-bottom": "2px solid #171717", "color": "#171717", "font-weight": "600" });
+        self.$container.find(".dle-tab-content").hide();
+        self.$container.find('.dle-tab-content[data-tab="' + tab + '"]').show();
+
+        if (tab === "nesting") self._loadNesting();
+        if (tab === "preview3d") self._render3DPreview();
+        if (tab === "palletize") self._loadPalletize();
+    });
+
+    // Pallet calculate button
+    this.$container.find(".dle-pallet-calc").on("click", function () { self._loadPalletize(); });
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  NESTING VISUALIZATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+DieLayoutEditor.prototype._loadNesting = function () {
+    var self = this;
+    if (!this.layoutData || !this.layoutData.corrugated_estimate) return;
+
+    frappe.call({
+        method: "libracad.api.get_nesting_layout",
+        args: { estimate_name: this.layoutData.corrugated_estimate },
+        callback: function (r) {
+            if (r.message) {
+                self._renderNestingSVG(r.message.layout);
+                self._renderNestingMetrics(r.message.layout);
+                self._renderMachineTable(r.message.all_machines, r.message.layout);
+            }
+        },
+    });
+};
+
+DieLayoutEditor.prototype._renderNestingSVG = function (layout) {
+    if (!layout || layout.total_outs === 0) {
+        this.$container.find(".dle-nesting-svg").html('<div class="text-muted" style="padding:40px;">No valid nesting layout. Blank may be too large for available machines.</div>');
+        return;
+    }
+
+    var sL = layout.sheet_length;
+    var sW = layout.sheet_width;
+    var scale = Math.min(700 / sL, 450 / sW, 8);
+    var svgW = sL * scale + 40;
+    var svgH = sW * scale + 40;
+    var ox = 20, oy = 20; // offset
+
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + svgW + '" height="' + svgH + '" style="max-width:100%;">';
+
+    // Defs for hatching
+    svg += '<defs>';
+    svg += '<pattern id="trim-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">';
+    svg += '<line x1="0" y1="0" x2="0" y2="6" stroke="#FF6B6B" stroke-width="1" opacity="0.4"/>';
+    svg += '</pattern>';
+    svg += '<pattern id="waste-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">';
+    svg += '<line x1="0" y1="0" x2="0" y2="8" stroke="#FF9800" stroke-width="1" opacity="0.2"/>';
+    svg += '</pattern>';
+    svg += '</defs>';
+
+    // Sheet background (waste area)
+    svg += '<rect x="' + ox + '" y="' + oy + '" width="' + (sL * scale) + '" height="' + (sW * scale) + '" fill="url(#waste-hatch)" stroke="#999" stroke-width="2"/>';
+
+    // Trim zones
+    var trim = layout.trim_allowance * scale;
+    var grip = layout.gripper_edge * scale;
+    // Left trim
+    svg += '<rect x="' + ox + '" y="' + oy + '" width="' + (trim + grip) + '" height="' + (sW * scale) + '" fill="url(#trim-hatch)"/>';
+    // Right trim
+    svg += '<rect x="' + (ox + sL * scale - trim) + '" y="' + oy + '" width="' + trim + '" height="' + (sW * scale) + '" fill="url(#trim-hatch)"/>';
+    // Top trim
+    svg += '<rect x="' + ox + '" y="' + oy + '" width="' + (sL * scale) + '" height="' + trim + '" fill="url(#trim-hatch)"/>';
+    // Bottom trim
+    svg += '<rect x="' + ox + '" y="' + (oy + sW * scale - trim) + '" width="' + (sL * scale) + '" height="' + trim + '" fill="url(#trim-hatch)"/>';
+
+    // Gripper edge label
+    svg += '<text x="' + (ox + (trim + grip) / 2) + '" y="' + (oy + sW * scale / 2) + '" text-anchor="middle" font-size="9" fill="#c00" transform="rotate(-90,' + (ox + (trim + grip) / 2) + ',' + (oy + sW * scale / 2) + ')">GRIPPER</text>';
+
+    // Blank positions
+    var colors = ["#4FC3F7", "#81C784", "#FFB74D", "#BA68C8", "#E57373", "#4DB6AC"];
+    var positions = layout.layout_positions || [];
+    for (var i = 0; i < positions.length; i++) {
+        var p = positions[i];
+        var bx = ox + p.x * scale;
+        var by = oy + p.y * scale;
+        var bw = p.width * scale;
+        var bh = p.height * scale;
+        var color = colors[i % colors.length];
+
+        // Blank rectangle
+        svg += '<rect x="' + bx + '" y="' + by + '" width="' + bw + '" height="' + bh + '" fill="' + color + '" fill-opacity="0.3" stroke="' + color + '" stroke-width="1.5" rx="2"/>';
+
+        // Simplified die-cut outline inside blank (just show score lines)
+        var innerMargin = Math.min(bw, bh) * 0.08;
+        svg += '<rect x="' + (bx + innerMargin) + '" y="' + (by + innerMargin) + '" width="' + (bw - 2 * innerMargin) + '" height="' + (bh - 2 * innerMargin) + '" fill="none" stroke="' + color + '" stroke-width="0.5" stroke-dasharray="3,2"/>';
+
+        // Out number
+        svg += '<text x="' + (bx + bw / 2) + '" y="' + (by + bh / 2 + 5) + '" text-anchor="middle" font-size="' + Math.min(14, bw * 0.3) + '" font-weight="700" fill="' + color + '">#' + (i + 1) + '</text>';
+
+        // Dimensions on first blank only
+        if (i === 0) {
+            svg += '<text x="' + (bx + bw / 2) + '" y="' + (by - 4) + '" text-anchor="middle" font-size="9" fill="#333">' + p.width.toFixed(1) + '"</text>';
+            svg += '<text x="' + (bx + bw + 4) + '" y="' + (by + bh / 2) + '" font-size="9" fill="#333" transform="rotate(90,' + (bx + bw + 4) + ',' + (by + bh / 2) + ')">' + p.height.toFixed(1) + '"</text>';
+        }
+    }
+
+    // Sheet dimension callouts
+    svg += '<text x="' + (ox + sL * scale / 2) + '" y="' + (oy + sW * scale + 16) + '" text-anchor="middle" font-size="12" font-weight="600" fill="#c00">' + sL.toFixed(1) + '"</text>';
+    svg += '<text x="' + (ox - 8) + '" y="' + (oy + sW * scale / 2) + '" text-anchor="middle" font-size="12" font-weight="600" fill="#c00" transform="rotate(-90,' + (ox - 8) + ',' + (oy + sW * scale / 2) + ')">' + sW.toFixed(1) + '"</text>';
+
+    // Gutter annotation
+    if (positions.length > 1) {
+        svg += '<text x="' + (ox + sL * scale / 2) + '" y="' + (oy - 6) + '" text-anchor="middle" font-size="9" fill="#666">Gutter: ' + layout.gutter + '"</text>';
+    }
+
+    svg += '</svg>';
+    this.$container.find(".dle-nesting-svg").html(svg);
+};
+
+DieLayoutEditor.prototype._renderNestingMetrics = function (layout) {
+    var utilColor = layout.utilization_pct > 70 ? "#4CAF50" : layout.utilization_pct > 50 ? "#FF9800" : "#F44336";
+    var html = [
+        '<div style="display:grid; gap:10px;">',
+        '  <div style="text-align:center; padding:12px; background:#e8f5e9; border-radius:6px;">',
+        '    <div style="font-size:28px; font-weight:800; color:#2E7D32;">' + layout.total_outs + '</div>',
+        '    <div style="font-size:11px; color:#666;">OUTS PER SHEET</div>',
+        '  </div>',
+        '  <div style="display:flex; gap:8px;">',
+        '    <div style="flex:1; text-align:center; padding:8px; background:#fff3e0; border-radius:6px;">',
+        '      <div style="font-size:18px; font-weight:700; color:#E65100;">' + layout.waste_pct + '%</div>',
+        '      <div style="font-size:10px; color:#666;">WASTE</div>',
+        '    </div>',
+        '    <div style="flex:1; text-align:center; padding:8px; background:#e3f2fd; border-radius:6px;">',
+        '      <div style="font-size:18px; font-weight:700; color:' + utilColor + ';">' + layout.utilization_pct + '%</div>',
+        '      <div style="font-size:10px; color:#666;">UTILIZATION</div>',
+        '    </div>',
+        '  </div>',
+        '  <div style="font-size:12px; line-height:1.8;">',
+        '    <div><b>Layout:</b> ' + layout.outs_across + ' across x ' + layout.outs_down + ' down</div>',
+        '    <div><b>Sheet:</b> ' + layout.sheet_length.toFixed(1) + '" x ' + layout.sheet_width.toFixed(1) + '"</div>',
+        '    <div><b>Usable:</b> ' + layout.usable_length.toFixed(1) + '" x ' + layout.usable_width.toFixed(1) + '"</div>',
+        '    <div><b>Blank:</b> ' + layout.blank_length.toFixed(1) + '" x ' + layout.blank_width.toFixed(1) + '"</div>',
+        '    <div><b>Orientation:</b> ' + (layout.blank_orientation || "0deg") + '</div>',
+        '    <div><b>Gutter:</b> ' + layout.gutter + '"</div>',
+        '    <div><b>Machine:</b> ' + (layout.machine_name || "Default") + '</div>',
+        '    <div style="margin-top:6px; padding-top:6px; border-top:1px solid #eee;">',
+        '      <b>Blank Area:</b> ' + layout.total_blank_area_sqft.toFixed(2) + ' sq ft</div>',
+        '    <div><b>Sheet Area:</b> ' + layout.sheet_area_sqft.toFixed(2) + ' sq ft</div>',
+        '  </div>',
+        '</div>',
+    ].join("\n");
+    this.$container.find(".dle-nesting-stats").html(html);
+};
+
+DieLayoutEditor.prototype._renderMachineTable = function (machines, currentLayout) {
+    if (!machines || machines.length === 0) {
+        this.$container.find(".dle-machine-list").html('<div class="text-muted">No die-cut machines configured</div>');
+        return;
+    }
+
+    var html = '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
+    html += '<tr style="border-bottom:1px solid #ddd;"><th style="padding:4px; text-align:left;">Machine</th><th>Outs</th><th>Waste</th><th>Sheet</th></tr>';
+
+    for (var i = 0; i < machines.length; i++) {
+        var m = machines[i];
+        var isBest = i === 0;
+        var bg = isBest ? "#e8f5e9" : (i % 2 === 0 ? "#fff" : "#fafafa");
+        html += '<tr style="background:' + bg + '; cursor:pointer;" data-machine="' + m.machine_id + '">';
+        html += '<td style="padding:4px;">' + (isBest ? "<b>" : "") + m.machine_name + (isBest ? " *</b>" : "") + '</td>';
+        html += '<td style="padding:4px; text-align:center; font-weight:700;">' + m.total_outs + '</td>';
+        html += '<td style="padding:4px; text-align:center;">' + m.waste_pct + '%</td>';
+        html += '<td style="padding:4px; text-align:center; font-size:10px;">' + m.sheet_length.toFixed(0) + 'x' + m.sheet_width.toFixed(0) + '</td>';
+        html += '</tr>';
+    }
+    html += '</table>';
+
+    this.$container.find(".dle-machine-list").html(html);
+
+    // Click machine row to re-render nesting
+    var self = this;
+    this.$container.find(".dle-machine-list tr[data-machine]").on("click", function () {
+        var mid = $(this).data("machine");
+        frappe.call({
+            method: "libracad.api.get_nesting_layout",
+            args: { estimate_name: self.layoutData.corrugated_estimate, machine_id: mid },
+            callback: function (r) {
+                if (r.message) {
+                    self._renderNestingSVG(r.message.layout);
+                    self._renderNestingMetrics(r.message.layout);
+                }
+            },
+        });
+    });
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  3D BOX PREVIEW — CSS 3D Transforms
+// ═══════════════════════════════════════════════════════════════════════════
+
+DieLayoutEditor.prototype._render3DPreview = function () {
+    var d = this.layoutData;
+    if (!d) return;
+
+    var L = d.length_inside || 12;
+    var W = d.width_inside || 10;
+    var D = d.depth_inside || 8;
+    var style = (d.box_style || "RSC").toUpperCase();
+    var caliper = d.caliper_in || 0.15;
+
+    // Scale to fit viewport (max 200px per dimension)
+    var maxDim = Math.max(L, W, D);
+    var sc = Math.min(180 / maxDim, 30);
+    var sL = L * sc, sW = W * sc, sD = D * sc;
+
+    var isOpenTop = (style === "HSC" || style === "TRAY");
+
+    var faces = {
+        front:  { w: sL, h: sD, tx: 0,       ty: 0,       tz: sW / 2,  rx: 0,   ry: 0,   color: "#4FC3F7", label: "FRONT " + L + '"x' + D + '"' },
+        back:   { w: sL, h: sD, tx: 0,       ty: 0,       tz: -sW / 2, rx: 0,   ry: 180, color: "#4FC3F7", label: "BACK" },
+        left:   { w: sW, h: sD, tx: -sL / 2, ty: 0,       tz: 0,       rx: 0,   ry: -90, color: "#81C784", label: "LEFT " + W + '"x' + D + '"' },
+        right:  { w: sW, h: sD, tx: sL / 2,  ty: 0,       tz: 0,       rx: 0,   ry: 90,  color: "#81C784", label: "RIGHT" },
+        bottom: { w: sL, h: sW, tx: 0,       ty: sD / 2,  tz: 0,       rx: 90,  ry: 0,   color: "#FFB74D", label: "BOTTOM " + L + '"x' + W + '"' },
+    };
+
+    if (!isOpenTop) {
+        faces.top = { w: sL, h: sW, tx: 0, ty: -sD / 2, tz: 0, rx: -90, ry: 0, color: "#CE93D8", label: "TOP" };
+    }
+
+    var boxHtml = '';
+    for (var name in faces) {
+        var f = faces[name];
+        boxHtml += '<div style="position:absolute; width:' + f.w + 'px; height:' + f.h + 'px; ' +
+            'background:' + f.color + '; opacity:0.85; border:2px solid rgba(0,0,0,0.3); ' +
+            'display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; color:rgba(0,0,0,0.6); ' +
+            'transform: translate3d(' + f.tx + 'px,' + f.ty + 'px,' + f.tz + 'px) rotateX(' + f.rx + 'deg) rotateY(' + f.ry + 'deg); ' +
+            'backface-visibility:hidden;">' + f.label + '</div>';
+    }
+
+    // Flap indicators for RSC/FOL
+    if (style === "RSC" || style === "FOL" || style === "SFF") {
+        var flapH = Math.min(sD * 0.15, 15);
+        // Top flaps (slightly open)
+        if (!isOpenTop) {
+            boxHtml += '<div style="position:absolute; width:' + sL + 'px; height:' + flapH + 'px; ' +
+                'background:#CE93D8; opacity:0.5; border:1px solid rgba(0,0,0,0.2); ' +
+                'transform: translate3d(0,' + (-sD / 2 - flapH / 2) + 'px,' + (sW / 2 + flapH / 2) + 'px) rotateX(-60deg); ' +
+                'transform-origin: center bottom;"></div>';
+        }
+    }
+
+    var scene = this.$container.find(".dle-3d-scene");
+    var box = this.$container.find(".dle-3d-box");
+    box.html(boxHtml);
+    box.css({
+        "transform": "rotateX(-25deg) rotateY(-35deg)",
+        "transform-style": "preserve-3d",
+    });
+
+    // Make draggable to rotate
+    var isDragging = false, startX, startY, rotX = -25, rotY = -35;
+    scene.off("mousedown mousemove mouseup mouseleave");
+    scene.on("mousedown", function (e) { isDragging = true; startX = e.clientX; startY = e.clientY; });
+    scene.on("mousemove", function (e) {
+        if (!isDragging) return;
+        rotY += (e.clientX - startX) * 0.5;
+        rotX += (e.clientY - startY) * -0.5;
+        box.css("transform", "rotateX(" + rotX + "deg) rotateY(" + rotY + "deg)");
+        startX = e.clientX; startY = e.clientY;
+    });
+    scene.on("mouseup mouseleave", function () { isDragging = false; });
+
+    // Info panel
+    var infoHtml = [
+        '<div style="line-height:2;">',
+        '<div><b>Style:</b> ' + (d.box_style || "RSC") + '</div>',
+        '<div><b>Inside:</b> ' + L + '" x ' + W + '" x ' + D + '"</div>',
+        '<div><b>Outside:</b> ' + (L + 2 * caliper).toFixed(2) + '" x ' + (W + 2 * caliper).toFixed(2) + '" x ' + (D + 2 * caliper).toFixed(2) + '"</div>',
+        '<div><b>Flute:</b> ' + (d.flute_type || "C") + ' (' + caliper + '" caliper)</div>',
+        '<div style="margin-top:10px; font-size:11px; color:#aaa;">' + (isOpenTop ? "Open top design" : "Fully enclosed") + '</div>',
+        '<div style="margin-top:10px; font-size:11px; color:#aaa;">Drag to rotate</div>',
+        '</div>',
+    ].join("");
+    this.$container.find(".dle-3d-info").html(infoHtml);
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PALLETIZING VISUALIZATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+DieLayoutEditor.prototype._loadPalletize = function () {
+    var d = this.layoutData;
+    if (!d) return;
+
+    var caliper = d.caliper_in || 0.15;
+    var boxL = (d.length_inside || 12) + 2 * caliper;
+    var boxW = (d.width_inside || 10) + 2 * caliper;
+    var boxH = (d.depth_inside || 8) + 2 * caliper;
+
+    // Pallet dimensions
+    var palletStr = this.$container.find(".dle-pallet-size").val() || "48x40";
+    var palletParts = palletStr.split("x");
+    var palletL = parseInt(palletParts[0]);
+    var palletW = parseInt(palletParts[1]);
+    var maxHeight = parseFloat(this.$container.find(".dle-pallet-max-height").val()) || 48;
+    var pattern = this.$container.find(".dle-pallet-pattern").val() || "column";
+
+    // Calculate best orientation
+    var orient1 = { across: Math.floor(palletL / boxL), down: Math.floor(palletW / boxW), bL: boxL, bW: boxW };
+    var orient2 = { across: Math.floor(palletL / boxW), down: Math.floor(palletW / boxL), bL: boxW, bW: boxL };
+    orient1.total = orient1.across * orient1.down;
+    orient2.total = orient2.across * orient2.down;
+
+    var best = orient1.total >= orient2.total ? orient1 : orient2;
+    var layers = Math.floor(maxHeight / boxH);
+    var totalBoxes = best.total * layers;
+    var palletHeight = layers * boxH + 6; // 6" pallet deck height
+
+    // Render top-down SVG
+    this._renderPalletTopDown(best, palletL, palletW, pattern);
+
+    // Render 3D isometric
+    this._renderPallet3D(best, boxH, layers, palletL, palletW);
+
+    // Metrics
+    var metricsHtml = [
+        '<div style="display:grid; gap:10px;">',
+        '  <div style="text-align:center; padding:12px; background:#e8f5e9; border-radius:6px;">',
+        '    <div style="font-size:28px; font-weight:800; color:#2E7D32;">' + totalBoxes + '</div>',
+        '    <div style="font-size:11px; color:#666;">BOXES PER PALLET</div>',
+        '  </div>',
+        '  <div style="display:flex; gap:8px;">',
+        '    <div style="flex:1; text-align:center; padding:8px; background:#e3f2fd; border-radius:6px;">',
+        '      <div style="font-size:18px; font-weight:700; color:#1565C0;">' + best.total + '</div>',
+        '      <div style="font-size:10px; color:#666;">PER LAYER</div>',
+        '    </div>',
+        '    <div style="flex:1; text-align:center; padding:8px; background:#fff3e0; border-radius:6px;">',
+        '      <div style="font-size:18px; font-weight:700; color:#E65100;">' + layers + '</div>',
+        '      <div style="font-size:10px; color:#666;">LAYERS</div>',
+        '    </div>',
+        '  </div>',
+        '  <div style="font-size:12px; line-height:1.8;">',
+        '    <div><b>Pallet:</b> ' + palletL + '" x ' + palletW + '"</div>',
+        '    <div><b>Box (outside):</b> ' + boxL.toFixed(2) + '" x ' + boxW.toFixed(2) + '" x ' + boxH.toFixed(2) + '"</div>',
+        '    <div><b>Layout:</b> ' + best.across + ' x ' + best.down + '</div>',
+        '    <div><b>Pallet Height:</b> ' + palletHeight.toFixed(1) + '"</div>',
+        '    <div><b>Max Height:</b> ' + maxHeight + '"</div>',
+        '    <div><b>Pattern:</b> ' + (pattern === "interlock" ? "Interlocking" : "Column") + '</div>',
+        '    <div style="margin-top:8px; padding-top:8px; border-top:1px solid #eee;">',
+        '      <b>Floor utilization:</b> ' + ((best.total * best.bL * best.bW) / (palletL * palletW) * 100).toFixed(1) + '%</div>',
+        '  </div>',
+        '</div>',
+    ].join("\n");
+    this.$container.find(".dle-pallet-metrics").html(metricsHtml);
+};
+
+DieLayoutEditor.prototype._renderPalletTopDown = function (best, palletL, palletW, pattern) {
+    var scale = Math.min(450 / palletL, 320 / palletW, 6);
+    var svgW = palletL * scale + 40;
+    var svgH = palletW * scale + 40;
+    var ox = 20, oy = 20;
+
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + svgW + '" height="' + svgH + '" style="max-width:100%;">';
+
+    // Pallet deck
+    svg += '<rect x="' + ox + '" y="' + oy + '" width="' + (palletL * scale) + '" height="' + (palletW * scale) + '" fill="#D7CCC8" stroke="#8D6E63" stroke-width="2" rx="3"/>';
+    // Pallet slats
+    for (var s = 0; s < 3; s++) {
+        var slY = oy + (palletW * scale) * (s + 1) / 4;
+        svg += '<line x1="' + ox + '" y1="' + slY + '" x2="' + (ox + palletL * scale) + '" y2="' + slY + '" stroke="#BCAAA4" stroke-width="1"/>';
+    }
+
+    // Box footprints
+    var colors = ["#4FC3F7", "#81C784", "#FFB74D", "#BA68C8"];
+    var count = 0;
+    for (var r = 0; r < best.down; r++) {
+        for (var c = 0; c < best.across; c++) {
+            var bx = ox + c * best.bL * scale;
+            var by = oy + r * best.bW * scale;
+            var bw = best.bL * scale;
+            var bh = best.bW * scale;
+            var color = colors[count % colors.length];
+            count++;
+
+            svg += '<rect x="' + (bx + 1) + '" y="' + (by + 1) + '" width="' + (bw - 2) + '" height="' + (bh - 2) + '" fill="' + color + '" fill-opacity="0.4" stroke="' + color + '" stroke-width="1.5" rx="2"/>';
+            // Cross pattern inside box
+            svg += '<line x1="' + (bx + 1) + '" y1="' + (by + 1) + '" x2="' + (bx + bw - 1) + '" y2="' + (by + bh - 1) + '" stroke="' + color + '" stroke-width="0.5" opacity="0.3"/>';
+            svg += '<line x1="' + (bx + bw - 1) + '" y1="' + (by + 1) + '" x2="' + (bx + 1) + '" y2="' + (by + bh - 1) + '" stroke="' + color + '" stroke-width="0.5" opacity="0.3"/>';
+            // Number
+            svg += '<text x="' + (bx + bw / 2) + '" y="' + (by + bh / 2 + 4) + '" text-anchor="middle" font-size="' + Math.min(12, bw * 0.25) + '" font-weight="700" fill="' + color + '">' + count + '</text>';
+        }
+    }
+
+    // Dimension labels
+    svg += '<text x="' + (ox + palletL * scale / 2) + '" y="' + (oy + palletW * scale + 16) + '" text-anchor="middle" font-size="11" font-weight="600" fill="#5D4037">' + palletL + '"</text>';
+    svg += '<text x="' + (ox - 8) + '" y="' + (oy + palletW * scale / 2) + '" text-anchor="middle" font-size="11" font-weight="600" fill="#5D4037" transform="rotate(-90,' + (ox - 8) + ',' + (oy + palletW * scale / 2) + ')">' + palletW + '"</text>';
+
+    svg += '</svg>';
+    this.$container.find(".dle-pallet-topdown").html(svg);
+};
+
+DieLayoutEditor.prototype._renderPallet3D = function (best, boxH, layers, palletL, palletW) {
+    // Isometric 3D using stacked SVG layers
+    var maxDim = Math.max(palletL, palletW, layers * boxH);
+    var sc = Math.min(300 / maxDim, 4);
+    var isoX = 0.7, isoY = 0.4; // isometric projection factors
+    var svgW = 500, svgH = 400;
+
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + svgW + '" height="' + svgH + '" style="max-width:100%;">';
+    var cx = svgW * 0.45, cy = svgH * 0.85;
+
+    // Helper: project 3D to isometric 2D
+    function iso(x, y, z) {
+        return {
+            x: cx + (x - y) * isoX * sc,
+            y: cy - z * sc - (x + y) * isoY * sc
+        };
+    }
+
+    // Draw pallet deck
+    var p1 = iso(0, 0, 0), p2 = iso(palletL, 0, 0), p3 = iso(palletL, palletW, 0), p4 = iso(0, palletW, 0);
+    svg += '<polygon points="' + p1.x + ',' + p1.y + ' ' + p2.x + ',' + p2.y + ' ' + p3.x + ',' + p3.y + ' ' + p4.x + ',' + p4.y + '" fill="#8D6E63" stroke="#5D4037" stroke-width="1.5"/>';
+
+    // Pallet legs
+    var legH = 6;
+    var p1b = iso(0, 0, -legH), p2b = iso(palletL, 0, -legH);
+    svg += '<polygon points="' + p1.x + ',' + p1.y + ' ' + p2.x + ',' + p2.y + ' ' + p2b.x + ',' + p2b.y + ' ' + p1b.x + ',' + p1b.y + '" fill="#6D4C41" stroke="#5D4037" stroke-width="0.5"/>';
+    var p2c = iso(palletL, palletW, -legH);
+    svg += '<polygon points="' + p2.x + ',' + p2.y + ' ' + p3.x + ',' + p3.y + ' ' + p2c.x + ',' + p2c.y + ' ' + p2b.x + ',' + p2b.y + '" fill="#795548" stroke="#5D4037" stroke-width="0.5"/>';
+
+    // Draw box layers
+    var colors = ["#4FC3F7", "#81C784", "#FFB74D", "#BA68C8", "#E57373"];
+    var maxLayersShow = Math.min(layers, 12); // limit to 12 for performance
+
+    for (var layer = 0; layer < maxLayersShow; layer++) {
+        var z0 = layer * boxH;
+        var layerColor = colors[layer % colors.length];
+        var darkerColor = colors[(layer + 2) % colors.length];
+
+        for (var r = 0; r < best.down; r++) {
+            for (var c = 0; c < best.across; c++) {
+                var bx0 = c * best.bL;
+                var by0 = r * best.bW;
+
+                // Top face
+                var t1 = iso(bx0, by0, z0 + boxH);
+                var t2 = iso(bx0 + best.bL, by0, z0 + boxH);
+                var t3 = iso(bx0 + best.bL, by0 + best.bW, z0 + boxH);
+                var t4 = iso(bx0, by0 + best.bW, z0 + boxH);
+                svg += '<polygon points="' + t1.x + ',' + t1.y + ' ' + t2.x + ',' + t2.y + ' ' + t3.x + ',' + t3.y + ' ' + t4.x + ',' + t4.y + '" fill="' + layerColor + '" fill-opacity="0.7" stroke="rgba(0,0,0,0.2)" stroke-width="0.5"/>';
+
+                // Front face (visible)
+                var f1 = iso(bx0, by0, z0);
+                var f2 = iso(bx0 + best.bL, by0, z0);
+                svg += '<polygon points="' + f1.x + ',' + f1.y + ' ' + f2.x + ',' + f2.y + ' ' + t2.x + ',' + t2.y + ' ' + t1.x + ',' + t1.y + '" fill="' + darkerColor + '" fill-opacity="0.5" stroke="rgba(0,0,0,0.15)" stroke-width="0.5"/>';
+
+                // Right face (visible)
+                var r1 = iso(bx0 + best.bL, by0 + best.bW, z0);
+                svg += '<polygon points="' + f2.x + ',' + f2.y + ' ' + r1.x + ',' + r1.y + ' ' + t3.x + ',' + t3.y + ' ' + t2.x + ',' + t2.y + '" fill="' + layerColor + '" fill-opacity="0.4" stroke="rgba(0,0,0,0.15)" stroke-width="0.5"/>';
+            }
+        }
+    }
+
+    // Layer count label
+    svg += '<text x="' + (svgW - 10) + '" y="20" text-anchor="end" font-size="12" font-weight="700" fill="#fff">' + layers + ' layers</text>';
+    svg += '<text x="' + (svgW - 10) + '" y="36" text-anchor="end" font-size="10" fill="#ccc">' + (best.total * layers) + ' boxes total</text>';
+
+    svg += '</svg>';
+    this.$container.find(".dle-pallet-3d").html(svg);
 };

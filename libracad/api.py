@@ -110,6 +110,48 @@ def load_canvas(layout_name):
 
 
 @frappe.whitelist()
+def get_nesting_layout(estimate_name, machine_id=None):
+    """Calculate nesting layout using corrugated_estimating's layout engine.
+
+    Returns outs, waste %, positions for SVG rendering, and machine comparison.
+    """
+    from corrugated_estimating.corrugated_estimating.layout import (
+        calculate_die_layout,
+        calculate_layout_for_all_machines,
+    )
+
+    est = frappe.get_doc("Corrugated Estimate", estimate_name)
+    blank_l = est.blank_length or 0
+    blank_w = est.blank_width or 0
+
+    if blank_l <= 0 or blank_w <= 0:
+        frappe.throw("Blank dimensions not calculated on this estimate.")
+
+    layout = calculate_die_layout(blank_l, blank_w, machine_id=machine_id)
+
+    all_machines = []
+    try:
+        all_machines = calculate_layout_for_all_machines(blank_l, blank_w)
+    except Exception:
+        pass
+
+    return {
+        "layout": layout,
+        "all_machines": all_machines,
+        "estimate": {
+            "name": est.name,
+            "box_style": est.box_style,
+            "length_inside": est.length_inside,
+            "width_inside": est.width_inside,
+            "depth_inside": est.depth_inside,
+            "blank_length": blank_l,
+            "blank_width": blank_w,
+            "flute_type": est.flute_type,
+        },
+    }
+
+
+@frappe.whitelist()
 def export_dxf(layout_name):
     """Generate a DXF file from the canvas JSON and attach to the Die Layout.
 

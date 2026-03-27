@@ -47,7 +47,23 @@
         </div>
     </div>
 
-    <!-- Main body: sidebar + canvas -->
+    <!-- Tab Bar -->
+    <div class="dle-tabs" style="display:flex; gap:0; border-bottom:2px solid #d1d8dd; background:#fff; flex-shrink:0;">
+        <button class="dle-tab active" data-tab="editor" style="padding:8px 20px; border:none; background:none; font-weight:600; font-size:13px; cursor:pointer; border-bottom:2px solid #171717; margin-bottom:-2px;">
+            <i class="fa fa-pencil"></i> Editor
+        </button>
+        <button class="dle-tab" data-tab="nesting" style="padding:8px 20px; border:none; background:none; font-size:13px; cursor:pointer; color:#8d99a6; margin-bottom:-2px;">
+            <i class="fa fa-th-large"></i> Nesting
+        </button>
+        <button class="dle-tab" data-tab="preview3d" style="padding:8px 20px; border:none; background:none; font-size:13px; cursor:pointer; color:#8d99a6; margin-bottom:-2px;">
+            <i class="fa fa-cube"></i> 3D Preview
+        </button>
+        <button class="dle-tab" data-tab="palletize" style="padding:8px 20px; border:none; background:none; font-size:13px; cursor:pointer; color:#8d99a6; margin-bottom:-2px;">
+            <i class="fa fa-th"></i> Palletize
+        </button>
+    </div>
+
+    <!-- Main body -->
     <div class="dle-body" style="display:flex; flex:1; overflow:hidden;">
         <!-- Sidebar -->
         <div class="dle-sidebar" style="width:260px; flex-shrink:0; border-right:1px solid #d1d8dd; overflow-y:auto; background:#fafbfc; padding:10px;">
@@ -144,12 +160,108 @@
             </div>
         </div>
 
-        <!-- Canvas Area -->
-        <div class="dle-canvas-wrap" style="flex:1; position:relative; overflow:hidden; background:#e8e8e8;">
-            <canvas id="dle-canvas"></canvas>
-            <!-- Coordinate readout -->
-            <div class="dle-coords" style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.7); color:#fff; padding:2px 8px; border-radius:3px; font-size:11px; font-family:monospace;">
-                X: 0.00 Y: 0.00
+        <!-- Content Area (tabs switch between these) -->
+        <div style="flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column;">
+
+            <!-- Tab: Editor (Fabric.js canvas) -->
+            <div class="dle-tab-content" data-tab="editor" style="flex:1; position:relative; overflow:hidden; background:#e8e8e8;">
+                <canvas id="dle-canvas"></canvas>
+                <div class="dle-coords" style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.7); color:#fff; padding:2px 8px; border-radius:3px; font-size:11px; font-family:monospace;">
+                    X: 0.00 Y: 0.00
+                </div>
+            </div>
+
+            <!-- Tab: Nesting -->
+            <div class="dle-tab-content" data-tab="nesting" style="flex:1; overflow:auto; background:#fff; display:none; padding:20px;">
+                <div style="display:flex; gap:20px; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:500px;">
+                        <div class="dle-nesting-svg" style="border:1px solid #d1d8dd; border-radius:4px; background:#f9f9f9; min-height:400px; display:flex; align-items:center; justify-content:center;">
+                            <div class="text-muted">Click "Nesting" tab to calculate layout</div>
+                        </div>
+                    </div>
+                    <div style="width:280px; flex-shrink:0;">
+                        <div class="dle-nesting-metrics" style="background:#fafbfc; border:1px solid #d1d8dd; border-radius:4px; padding:16px;">
+                            <h6 style="margin:0 0 12px 0; font-weight:700;">Nesting Metrics</h6>
+                            <div class="dle-nesting-stats" style="font-size:13px;">Loading...</div>
+                        </div>
+                        <div class="dle-machine-table" style="margin-top:16px; background:#fafbfc; border:1px solid #d1d8dd; border-radius:4px; padding:16px; max-height:300px; overflow-y:auto;">
+                            <h6 style="margin:0 0 12px 0; font-weight:700;">Machine Comparison</h6>
+                            <div class="dle-machine-list" style="font-size:12px;">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: 3D Preview -->
+            <div class="dle-tab-content" data-tab="preview3d" style="flex:1; overflow:auto; background:#1a1a2e; display:none; padding:20px;">
+                <div style="display:flex; gap:20px; height:100%;">
+                    <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+                        <div class="dle-3d-scene" style="perspective:800px; width:500px; height:400px; position:relative;">
+                            <div class="dle-3d-box" style="width:100%; height:100%; position:relative; transform-style:preserve-3d; transition:transform 0.1s;"></div>
+                        </div>
+                    </div>
+                    <div style="width:250px; flex-shrink:0;">
+                        <div style="background:rgba(255,255,255,0.1); border-radius:4px; padding:16px; color:#fff;">
+                            <h6 style="margin:0 0 12px 0; font-weight:700; color:#fff;">3D Box Preview</h6>
+                            <div class="dle-3d-info" style="font-size:13px; color:#ccc;">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: Palletize -->
+            <div class="dle-tab-content" data-tab="palletize" style="flex:1; overflow:auto; background:#fff; display:none; padding:20px;">
+                <div style="display:flex; gap:20px; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:500px;">
+                        <div style="display:flex; gap:20px;">
+                            <div style="flex:1;">
+                                <h6 style="margin:0 0 8px;">Top-Down View</h6>
+                                <div class="dle-pallet-topdown" style="border:1px solid #d1d8dd; border-radius:4px; background:#f9f9f9; min-height:350px; display:flex; align-items:center; justify-content:center;">
+                                    <div class="text-muted">Loading pallet layout...</div>
+                                </div>
+                            </div>
+                            <div style="flex:1;">
+                                <h6 style="margin:0 0 8px;">3D Isometric View</h6>
+                                <div class="dle-pallet-3d" style="border:1px solid #d1d8dd; border-radius:4px; background:#2d2d44; min-height:350px; display:flex; align-items:center; justify-content:center; perspective:600px;">
+                                    <div class="text-muted" style="color:#999;">Loading...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="width:280px; flex-shrink:0;">
+                        <div style="background:#fafbfc; border:1px solid #d1d8dd; border-radius:4px; padding:16px; margin-bottom:16px;">
+                            <h6 style="margin:0 0 12px 0; font-weight:700;">Pallet Settings</h6>
+                            <div style="font-size:12px;">
+                                <label style="display:block; margin-bottom:8px;">
+                                    Pallet Size:
+                                    <select class="dle-pallet-size" style="width:100%; padding:4px; border:1px solid #d1d8dd; border-radius:3px; margin-top:2px;">
+                                        <option value="48x40">48 x 40 (GMA Standard)</option>
+                                        <option value="42x42">42 x 42 (Drum)</option>
+                                        <option value="48x48">48 x 48 (Square)</option>
+                                    </select>
+                                </label>
+                                <label style="display:block; margin-bottom:8px;">
+                                    Max Height (in):
+                                    <input type="number" class="dle-pallet-max-height" value="48" min="12" max="96" style="width:100%; padding:4px; border:1px solid #d1d8dd; border-radius:3px; margin-top:2px;">
+                                </label>
+                                <label style="display:block; margin-bottom:8px;">
+                                    Layer Pattern:
+                                    <select class="dle-pallet-pattern" style="width:100%; padding:4px; border:1px solid #d1d8dd; border-radius:3px; margin-top:2px;">
+                                        <option value="column">Column Stack</option>
+                                        <option value="interlock">Interlocking</option>
+                                    </select>
+                                </label>
+                                <button class="btn btn-xs btn-primary dle-pallet-calc" style="width:100%; margin-top:8px;">
+                                    <i class="fa fa-calculator"></i> Calculate
+                                </button>
+                            </div>
+                        </div>
+                        <div style="background:#fafbfc; border:1px solid #d1d8dd; border-radius:4px; padding:16px;">
+                            <h6 style="margin:0 0 12px 0; font-weight:700;">Pallet Metrics</h6>
+                            <div class="dle-pallet-metrics" style="font-size:13px;">Click Calculate to see results</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
