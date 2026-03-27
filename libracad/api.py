@@ -168,11 +168,11 @@ def get_nesting_layout(estimate_name, machine_id=None):
     if blank_l <= 0 or blank_w <= 0:
         frappe.throw("Blank dimensions not calculated on this estimate.")
 
-    layout = calculate_die_layout(blank_l, blank_w, machine_id=machine_id)
+    layout = calculate_die_layout(blank_l, blank_w, machine_id=machine_id, tight_fit=True)
 
     all_machines = []
     try:
-        all_machines = calculate_layout_for_all_machines(blank_l, blank_w)
+        all_machines = calculate_layout_for_all_machines(blank_l, blank_w, tight_fit=True)
     except Exception:
         pass
 
