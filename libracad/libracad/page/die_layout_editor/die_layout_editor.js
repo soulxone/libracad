@@ -178,12 +178,46 @@ DieLayoutEditor.prototype.on_show = function () {
 
     // Try route_options first, then URL query
     var layoutName = params.layout || frappe.utils.get_url_arg("layout");
+    var estimateName = params.estimate || frappe.utils.get_url_arg("estimate");
+
     if (layoutName && layoutName !== this.layoutName) {
         this.layoutName = layoutName;
         this._loadLayout(layoutName);
+    } else if (estimateName) {
+        // Load from estimate: find or create Die Layout, then load it
+        this._loadFromEstimate(estimateName);
     }
     // Clear route_options so they don't persist
     frappe.route_options = null;
+};
+
+DieLayoutEditor.prototype._loadFromEstimate = function (estimateName) {
+    var self = this;
+    frappe.call({
+        method: "libracad.api.get_die_layout_for_estimate",
+        args: { estimate_name: estimateName },
+        callback: function (r) {
+            if (r.message) {
+                // Layout exists — load it
+                self.layoutName = r.message;
+                self._loadLayout(r.message);
+            } else {
+                // Create a new one and load it
+                frappe.call({
+                    method: "libracad.api.create_die_layout_from_estimate",
+                    args: { estimate_name: estimateName },
+                    freeze: true,
+                    freeze_message: "Creating die layout from estimate...",
+                    callback: function (r2) {
+                        if (r2.message) {
+                            self.layoutName = r2.message;
+                            self._loadLayout(r2.message);
+                        }
+                    },
+                });
+            }
+        },
+    });
 };
 
 DieLayoutEditor.prototype._loadLayout = function (layoutName) {
@@ -783,8 +817,14 @@ DieLayoutEditor.prototype._autoGenerate = function () {
         this._generateFOL(L, W, D, caliper);
     } else if (style.indexOf("HSC") >= 0 || style === "0202") {
         this._generateHSC(L, W, D, caliper);
+    } else if (style.indexOf("BLISS") >= 0) {
+        this._generateBLISS(L, W, D, caliper);
+    } else if (style.indexOf("TRAY") >= 0 || style.indexOf("SFF") >= 0) {
+        this._generateTRAY(L, W, D, caliper);
+    } else if (style.indexOf("PIZZA") >= 0) {
+        this._generateTRAY(L, W, D, caliper); // Pizza uses tray geometry
     } else {
-        // Default to RSC
+        // Default to RSC for any unknown style (DIE-CUT, etc.)
         this._generateRSC(L, W, D, caliper);
     }
 
@@ -1004,6 +1044,134 @@ DieLayoutEditor.prototype._generateHSC = function (L, W, D, caliper) {
     // SCORE: flap junctions
     addLine(x0, y1, x5, y1, "SCORE");
     addLine(x0, y2, x5, y2, "SCORE");
+};
+
+// ─── BLISS Generator (wrap-around box) ──────────────────────────────────────
+DieLayoutEditor.prototype._generateBLISS = function (L, W, D, caliper) {
+    var px = this._toPixels.bind(this);
+    var cal2 = 2 * caliper;
+
+    // BLISS is a wrap-around: Bottom → Front → Top → Back, with side tuck flaps
+    var x0 = 0;
+    var x1 = px(D);            // left flap fold
+    var x2 = px(D + L);        // right flap fold
+    var x3 = px(2 * D + L);    // right edge
+
+    var y0 = 0;
+    var y1 = px(W);            // back fold
+    var y2 = px(W + D);        // top fold
+    var y3 = px(2 * W + D);    // front fold
+    var y4 = px(2 * W + 2 * D); // bottom edge (with overlap)
+
+    var self = this;
+    function addLine(x1v, y1v, x2v, y2v, layer) {
+        var def = LAYERS[layer];
+        self.canvas.add(new fabric.Line([x1v, y1v, x2v, y2v], {
+            stroke: def.color, strokeWidth: def.width, strokeDashArray: def.dash,
+            selectable: true, cadLayer: layer, cadType: "generated",
+        }));
+    }
+
+    // CUT: outer boundary
+    addLine(x0, y0, x3, y0, "CUT");  // top
+    addLine(x0, y4, x3, y4, "CUT");  // bottom
+    addLine(x0, y0, x0, y4, "CUT");  // left
+    addLine(x3, y0, x3, y4, "CUT");  // right
+
+    // SCORE: panel folds (horizontal)
+    addLine(x0, y1, x3, y1, "SCORE");  // back/top fold
+    addLine(x0, y2, x3, y2, "SCORE");  // top/front fold
+    addLine(x0, y3, x3, y3, "SCORE");  // front/bottom fold
+
+    // SCORE: side flap folds (vertical)
+    addLine(x1, y0, x1, y4, "SCORE");  // left panel fold
+    addLine(x2, y0, x2, y4, "SCORE");  // right panel fold
+
+    // CUT: side flap slot cuts (at each horizontal fold)
+    addLine(x0, y1, x1, y1, "CUT");
+    addLine(x2, y1, x3, y1, "CUT");
+    addLine(x0, y2, x1, y2, "CUT");
+    addLine(x2, y2, x3, y2, "CUT");
+    addLine(x0, y3, x1, y3, "CUT");
+    addLine(x2, y3, x3, y3, "CUT");
+
+    // DIMENSION lines
+    addLine(x1, y1 - px(0.3), x2, y1 - px(0.3), "DIMENSION");  // L across top
+    addLine(x0 - px(0.3), y1, x0 - px(0.3), y2, "DIMENSION");  // D on left
+
+    // Labels
+    var cx = (x1 + x2) / 2, fh = 10;
+    [{x: cx, y: (y0 + y1) / 2, t: "BACK"},
+     {x: cx, y: (y1 + y2) / 2, t: "TOP"},
+     {x: cx, y: (y2 + y3) / 2, t: "FRONT"},
+     {x: cx, y: (y3 + y4) / 2, t: "BOTTOM"}].forEach(function(p) {
+        self.canvas.add(new fabric.IText(p.t, {
+            left: p.x - 15, top: p.y - 5, fontSize: fh,
+            fill: LAYERS.ANNOTATION.color, fontFamily: "monospace",
+            cadLayer: "ANNOTATION", cadType: "label",
+        }));
+    });
+};
+
+// ─── TRAY / SFF Generator (open-top tray with folding walls) ────────────────
+DieLayoutEditor.prototype._generateTRAY = function (L, W, D, caliper) {
+    var px = this._toPixels.bind(this);
+
+    // Tray blank: side flaps fold up to form walls
+    // Center panel = L x W, surrounded by D-height flaps
+    var x0 = 0;
+    var x1 = px(D);            // left wall fold
+    var x2 = px(D + L);        // right wall fold
+    var x3 = px(2 * D + L);    // right edge
+
+    var y0 = 0;
+    var y1 = px(D);            // front wall fold
+    var y2 = px(D + W);        // back wall fold
+    var y3 = px(2 * D + W);    // bottom edge
+
+    var self = this;
+    function addLine(x1v, y1v, x2v, y2v, layer) {
+        var def = LAYERS[layer];
+        self.canvas.add(new fabric.Line([x1v, y1v, x2v, y2v], {
+            stroke: def.color, strokeWidth: def.width, strokeDashArray: def.dash,
+            selectable: true, cadLayer: layer, cadType: "generated",
+        }));
+    }
+
+    // CUT: outer boundary
+    addLine(x0, y0, x3, y0, "CUT");
+    addLine(x0, y3, x3, y3, "CUT");
+    addLine(x0, y0, x0, y3, "CUT");
+    addLine(x3, y0, x3, y3, "CUT");
+
+    // SCORE: wall folds
+    addLine(x1, y0, x1, y3, "SCORE");  // left wall
+    addLine(x2, y0, x2, y3, "SCORE");  // right wall
+    addLine(x0, y1, x3, y1, "SCORE");  // front wall
+    addLine(x0, y2, x3, y2, "SCORE");  // back wall
+
+    // CUT: corner relief cuts (allow walls to fold up)
+    addLine(x0, y1, x1, y1, "CUT");  // front-left
+    addLine(x0, y2, x1, y2, "CUT");  // back-left
+    addLine(x2, y1, x3, y1, "CUT");  // front-right
+    addLine(x2, y2, x3, y2, "CUT");  // back-right
+
+    // Labels
+    self.canvas.add(new fabric.IText("BOTTOM", {
+        left: (x1 + x2) / 2 - 20, top: (y1 + y2) / 2 - 5, fontSize: 10,
+        fill: LAYERS.ANNOTATION.color, fontFamily: "monospace",
+        cadLayer: "ANNOTATION", cadType: "label",
+    }));
+    [{x: (x1 + x2) / 2, y: (y0 + y1) / 2, t: "FRONT"},
+     {x: (x1 + x2) / 2, y: (y2 + y3) / 2, t: "BACK"},
+     {x: (x0 + x1) / 2, y: (y1 + y2) / 2, t: "LEFT"},
+     {x: (x2 + x3) / 2, y: (y1 + y2) / 2, t: "RIGHT"}].forEach(function(p) {
+        self.canvas.add(new fabric.IText(p.t, {
+            left: p.x - 12, top: p.y - 5, fontSize: 9,
+            fill: LAYERS.ANNOTATION.color, fontFamily: "monospace",
+            cadLayer: "ANNOTATION", cadType: "label",
+        }));
+    });
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

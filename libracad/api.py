@@ -58,6 +58,13 @@ def create_die_layout_from_estimate(estimate_name):
         "doctype": "Die Layout",
         "layout_name": layout_name,
         "corrugated_estimate": estimate_name,
+        "box_style": est.box_style,
+        "flute_type": est.flute_type,
+        "length_inside": est.length_inside,
+        "width_inside": est.width_inside,
+        "depth_inside": est.depth_inside,
+        "blank_length": est.blank_length,
+        "blank_width": est.blank_width,
         "status": "Draft",
     })
     doc.insert(ignore_permissions=True)
@@ -86,11 +93,43 @@ def load_canvas(layout_name):
     """Load full Die Layout data including canvas JSON and estimate dimensions."""
     doc = frappe.get_doc("Die Layout", layout_name)
 
+    # If Die Layout is missing box dims but has a linked estimate, pull from estimate
+    box_style = doc.box_style
+    flute_type = doc.flute_type
+    length_inside = doc.length_inside
+    width_inside = doc.width_inside
+    depth_inside = doc.depth_inside
+    blank_length = doc.blank_length
+    blank_width = doc.blank_width
+
+    if doc.corrugated_estimate and not box_style:
+        try:
+            est = frappe.get_doc("Corrugated Estimate", doc.corrugated_estimate)
+            box_style = est.box_style
+            flute_type = est.flute_type
+            length_inside = est.length_inside
+            width_inside = est.width_inside
+            depth_inside = est.depth_inside
+            blank_length = est.blank_length
+            blank_width = est.blank_width
+            # Backfill the Die Layout record
+            doc.box_style = box_style
+            doc.flute_type = flute_type
+            doc.length_inside = length_inside
+            doc.width_inside = width_inside
+            doc.depth_inside = depth_inside
+            doc.blank_length = blank_length
+            doc.blank_width = blank_width
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+        except Exception:
+            pass
+
     # Also get caliper from flute type for parametric generation
     caliper_in = 0
-    if doc.flute_type:
+    if flute_type:
         caliper_in = frappe.db.get_value(
-            "Corrugated Flute", doc.flute_type, "thickness_in"
+            "Corrugated Flute", flute_type, "thickness_in"
         ) or 0
 
     return {
@@ -98,13 +137,13 @@ def load_canvas(layout_name):
         "layout_name": doc.layout_name,
         "status": doc.status,
         "corrugated_estimate": doc.corrugated_estimate,
-        "box_style": doc.box_style,
-        "flute_type": doc.flute_type,
-        "length_inside": doc.length_inside,
-        "width_inside": doc.width_inside,
-        "depth_inside": doc.depth_inside,
-        "blank_length": doc.blank_length,
-        "blank_width": doc.blank_width,
+        "box_style": box_style,
+        "flute_type": flute_type,
+        "length_inside": length_inside,
+        "width_inside": width_inside,
+        "depth_inside": depth_inside,
+        "blank_length": blank_length,
+        "blank_width": blank_width,
         "caliper_in": caliper_in,
         "canvas_json": doc.canvas_json,
         "canvas_version": doc.canvas_version,
