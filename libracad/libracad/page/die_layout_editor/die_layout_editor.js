@@ -919,18 +919,63 @@ DieLayoutEditor.prototype._generateRSC = function (L, W, D, caliper) {
     addLine(x0, y1, x5, y1, "SCORE");
     addLine(x0, y2, x5, y2, "SCORE");
 
-    // ── DIMENSION: Panel widths ──
-    var dimY = y3 + px(0.5);
-    addText('W=' + W + '"', x1, dimY);
-    addText('L=' + L + '"', x2, dimY);
-    addText('W=' + W + '"', x3, dimY);
-    addText('L=' + L + '"', x4, dimY);
+    // ── DIMENSION helpers ──
+    function addDimLine(ax, ay, bx, by, label, offset, vertical) {
+        // Draw dimension line with arrows and label
+        var def = LAYERS.DIMENSION;
+        var ext = px(0.15); // extension tick length
+        if (vertical) {
+            // Vertical dimension at offset to the right/left
+            var dx = offset;
+            self.canvas.add(new fabric.Line([ax + dx, ay, ax + dx, by], {
+                stroke: def.color, strokeWidth: 0.8, selectable: false, cadLayer: "DIMENSION", cadType: "generated" }));
+            // Ticks
+            self.canvas.add(new fabric.Line([ax + dx - ext, ay, ax + dx + ext, ay], {
+                stroke: def.color, strokeWidth: 0.8, selectable: false, cadLayer: "DIMENSION", cadType: "generated" }));
+            self.canvas.add(new fabric.Line([bx + dx - ext, by, bx + dx + ext, by], {
+                stroke: def.color, strokeWidth: 0.8, selectable: false, cadLayer: "DIMENSION", cadType: "generated" }));
+            addText(label, ax + dx + ext + 2, (ay + by) / 2 - 5);
+        } else {
+            // Horizontal dimension at offset below/above
+            var dy = offset;
+            self.canvas.add(new fabric.Line([ax, ay + dy, bx, ay + dy], {
+                stroke: def.color, strokeWidth: 0.8, selectable: false, cadLayer: "DIMENSION", cadType: "generated" }));
+            // Ticks
+            self.canvas.add(new fabric.Line([ax, ay + dy - ext, ax, ay + dy + ext], {
+                stroke: def.color, strokeWidth: 0.8, selectable: false, cadLayer: "DIMENSION", cadType: "generated" }));
+            self.canvas.add(new fabric.Line([bx, ay + dy - ext, bx, ay + dy + ext], {
+                stroke: def.color, strokeWidth: 0.8, selectable: false, cadLayer: "DIMENSION", cadType: "generated" }));
+            addText(label, (ax + bx) / 2 - px(label.length * 0.04), ay + dy + ext + 1);
+        }
+    }
 
-    // ── DIMENSION: Flap heights ──
-    var dimX = x5 + px(0.3);
-    addText('Flap=' + (D / 2).toFixed(2) + '"', dimX, y0);
-    addText('D=' + D + '"', dimX, y1);
-    addText('Flap=' + (D / 2).toFixed(2) + '"', dimX, y2);
+    // ── DIMENSION: Panel widths (bottom) ──
+    var dimOff = px(0.6);
+    addDimLine(x0, y3, x1, y3, JOINT.toFixed(2) + '"', dimOff, false);    // Glue tab
+    addDimLine(x1, y3, x2, y3, W + '"', dimOff, false);                    // Width
+    addDimLine(x2, y3, x3, y3, L + '"', dimOff, false);                    // Length
+    addDimLine(x3, y3, x4, y3, W + '"', dimOff, false);                    // Width
+    addDimLine(x4, y3, x5, y3, L + '"', dimOff, false);                    // Length
+
+    // ── DIMENSION: Overall blank width (bottom, further out) ──
+    var blankL = (JOINT + 2 * W + 2 * L);
+    addDimLine(x0, y3, x5, y3, blankL.toFixed(2) + '"', dimOff + px(0.6), false);
+
+    // ── DIMENSION: Flap + body heights (right side) ──
+    var dimRX = px(0.6);
+    addDimLine(x5, y0, x5, y1, (D / 2 + cal2).toFixed(2) + '"', dimRX, true);   // Top flap
+    addDimLine(x5, y1, x5, y2, D + '"', dimRX, true);                             // Body depth
+    addDimLine(x5, y2, x5, y3, (D / 2 + cal2).toFixed(2) + '"', dimRX, true);   // Bottom flap
+
+    // ── DIMENSION: Overall blank height (right, further out) ──
+    var blankW = 2 * (D / 2 + cal2) + D;
+    addDimLine(x5, y0, x5, y3, blankW.toFixed(2) + '"', dimRX + px(0.6), true);
+
+    // ── DIMENSION: Slot cut heights (inside top/bottom flaps) ──
+    var slotH = D / 2 + cal2;
+    addText(slotH.toFixed(2) + '"', (x1 + x2) / 2 - 12, (y0 + y1) / 2 - 5);
+    addText(slotH.toFixed(2) + '"', (x2 + x3) / 2 - 12, (y0 + y1) / 2 - 5);
+    addText(slotH.toFixed(2) + '"', (x3 + x4) / 2 - 12, (y0 + y1) / 2 - 5);
 
     // ── ANNOTATION: Panel labels ──
     addText("GLUE TAB", x0 + 2, y1 + px(D / 2) - 6);
@@ -1505,32 +1550,66 @@ DieLayoutEditor.prototype._loadPalletize = function () {
     // Render 3D isometric
     this._renderPallet3D(best, boxH, layers, palletL, palletW);
 
+    // Compute additional metrics
+    var floorUtil = (best.total * best.bL * best.bW) / (palletL * palletW) * 100;
+    var overhangL = (best.across * best.bL) - palletL;
+    var overhangW = (best.down * best.bW) - palletW;
+    var gapL = palletL - (best.across * best.bL);
+    var gapW = palletW - (best.down * best.bW);
+    var footprintL = (best.across * best.bL).toFixed(2);
+    var footprintW = (best.down * best.bW).toFixed(2);
+
+    // Estimate weight (assume ~90 lbs/MSF for single wall, ~0.65 lb/sqft board)
+    var boxAreaSqft = ((d.blank_length || 0) * (d.blank_width || 0)) / 144;
+    var boxWeightLbs = boxAreaSqft * 0.65;
+    var palletWeightLbs = totalBoxes * boxWeightLbs + 45; // +45 lbs for pallet
+    var palletsPerTruck = maxHeight <= 48 ? Math.floor(53 * 12 / palletL) * 2 : Math.floor(53 * 12 / palletL);
+    var boxesPerTruck = totalBoxes * palletsPerTruck;
+
     // Metrics
     var metricsHtml = [
-        '<div style="display:grid; gap:10px;">',
+        '<div style="display:grid; gap:8px;">',
         '  <div style="text-align:center; padding:12px; background:#e8f5e9; border-radius:6px;">',
         '    <div style="font-size:28px; font-weight:800; color:#2E7D32;">' + totalBoxes + '</div>',
         '    <div style="font-size:11px; color:#666;">BOXES PER PALLET</div>',
         '  </div>',
-        '  <div style="display:flex; gap:8px;">',
-        '    <div style="flex:1; text-align:center; padding:8px; background:#e3f2fd; border-radius:6px;">',
+        '  <div style="display:flex; gap:6px;">',
+        '    <div style="flex:1; text-align:center; padding:6px; background:#e3f2fd; border-radius:6px;">',
         '      <div style="font-size:18px; font-weight:700; color:#1565C0;">' + best.total + '</div>',
-        '      <div style="font-size:10px; color:#666;">PER LAYER</div>',
+        '      <div style="font-size:9px; color:#666;">PER LAYER</div>',
         '    </div>',
-        '    <div style="flex:1; text-align:center; padding:8px; background:#fff3e0; border-radius:6px;">',
+        '    <div style="flex:1; text-align:center; padding:6px; background:#fff3e0; border-radius:6px;">',
         '      <div style="font-size:18px; font-weight:700; color:#E65100;">' + layers + '</div>',
-        '      <div style="font-size:10px; color:#666;">LAYERS</div>',
+        '      <div style="font-size:9px; color:#666;">LAYERS</div>',
+        '    </div>',
+        '    <div style="flex:1; text-align:center; padding:6px; background:#fce4ec; border-radius:6px;">',
+        '      <div style="font-size:18px; font-weight:700; color:#c62828;">' + floorUtil.toFixed(0) + '%</div>',
+        '      <div style="font-size:9px; color:#666;">FLOOR UTIL</div>',
         '    </div>',
         '  </div>',
-        '  <div style="font-size:12px; line-height:1.8;">',
-        '    <div><b>Pallet:</b> ' + palletL + '" x ' + palletW + '"</div>',
-        '    <div><b>Box (outside):</b> ' + boxL.toFixed(2) + '" x ' + boxW.toFixed(2) + '" x ' + boxH.toFixed(2) + '"</div>',
-        '    <div><b>Layout:</b> ' + best.across + ' x ' + best.down + '</div>',
-        '    <div><b>Pallet Height:</b> ' + palletHeight.toFixed(1) + '"</div>',
-        '    <div><b>Max Height:</b> ' + maxHeight + '"</div>',
-        '    <div><b>Pattern:</b> ' + (pattern === "interlock" ? "Interlocking" : "Column") + '</div>',
-        '    <div style="margin-top:8px; padding-top:8px; border-top:1px solid #eee;">',
-        '      <b>Floor utilization:</b> ' + ((best.total * best.bL * best.bW) / (palletL * palletW) * 100).toFixed(1) + '%</div>',
+        // -- Pallet Dimensions
+        '  <div style="font-size:11px; line-height:1.7; border-top:1px solid #eee; padding-top:6px;">',
+        '    <div style="font-weight:700; color:#333; margin-bottom:2px;">Pallet Dimensions</div>',
+        '    <div><b>Pallet:</b> ' + palletL + '" &times; ' + palletW + '"</div>',
+        '    <div><b>Box (outside):</b> ' + boxL.toFixed(2) + '" &times; ' + boxW.toFixed(2) + '" &times; ' + boxH.toFixed(2) + '"</div>',
+        '    <div><b>Layout:</b> ' + best.across + ' across &times; ' + best.down + ' down</div>',
+        '    <div><b>Footprint:</b> ' + footprintL + '" &times; ' + footprintW + '"</div>',
+        '    <div><b>Gap:</b> ' + gapL.toFixed(1) + '" &times; ' + gapW.toFixed(1) + '" unused</div>',
+        '  </div>',
+        // -- Height
+        '  <div style="font-size:11px; line-height:1.7; border-top:1px solid #eee; padding-top:6px;">',
+        '    <div style="font-weight:700; color:#333; margin-bottom:2px;">Height &amp; Weight</div>',
+        '    <div><b>Stack Height:</b> ' + palletHeight.toFixed(1) + '" (' + layers + ' layers &times; ' + boxH.toFixed(2) + '" + 6" deck)</div>',
+        '    <div><b>Max Allowed:</b> ' + maxHeight + '"</div>',
+        '    <div><b>Headroom:</b> ' + (maxHeight - palletHeight).toFixed(1) + '" remaining</div>',
+        '    <div><b>Est. Weight:</b> ~' + palletWeightLbs.toFixed(0) + ' lbs (~' + boxWeightLbs.toFixed(2) + ' lbs/box)</div>',
+        '  </div>',
+        // -- Shipping
+        '  <div style="font-size:11px; line-height:1.7; border-top:1px solid #eee; padding-top:6px;">',
+        '    <div style="font-weight:700; color:#333; margin-bottom:2px;">Shipping Estimate</div>',
+        '    <div><b>Pallets/Truck:</b> ~' + palletsPerTruck + ' (53\' trailer)</div>',
+        '    <div><b>Boxes/Truck:</b> ~' + boxesPerTruck.toLocaleString() + '</div>',
+        '    <div><b>Pattern:</b> ' + (pattern === "interlock" ? "Interlocking" : "Column Stack") + '</div>',
         '  </div>',
         '</div>',
     ].join("\n");
