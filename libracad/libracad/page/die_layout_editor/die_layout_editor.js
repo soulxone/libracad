@@ -363,8 +363,8 @@ DieLayoutEditor.prototype._bindToolbar = function () {
     });
     this.$container.find(".dle-export-svg").on("click", function () { self._exportSVG(); });
 
-    // Import DXF button
-    this.$container.find(".dle-btn-import-dxf").on("click", function () { self._importDXF(); });
+    // Import CAD file button (DXF, SVG, AI, EPS, PDF)
+    this.$container.find(".dle-btn-import-dxf").on("click", function () { self._importCAD(); });
     this.$container.find(".dle-export-png").on("click", function () { self._exportPNG(); });
 };
 
@@ -1656,37 +1656,43 @@ DieLayoutEditor.prototype._renderPallet3D = function (best, boxH, layers, pallet
 //  DXF IMPORT — Upload and parse DXF file
 // ═══════════════════════════════════════════════════════════════════════════
 
-DieLayoutEditor.prototype._importDXF = function () {
+DieLayoutEditor.prototype._importCAD = function () {
     var self = this;
+    var supported = [".dxf", ".svg", ".ai", ".eps", ".pdf"];
 
     // Use Frappe's file upload dialog
     new frappe.ui.FileUploader({
         doctype: "Die Layout",
         docname: self.layoutName || undefined,
         restrictions: {
-            allowed_file_types: [".dxf"],
+            allowed_file_types: supported,
         },
         on_success: function (file_doc) {
             var file_url = file_doc.file_url;
-            frappe.show_alert({ message: "DXF uploaded. Parsing...", indicator: "blue" });
+            var ext = file_url.split(".").pop().toLowerCase();
+            var formatName = {dxf: "DXF", svg: "SVG", ai: "Adobe Illustrator", eps: "EPS", pdf: "PDF"}[ext] || ext.toUpperCase();
 
+            frappe.show_alert({ message: formatName + " uploaded. Parsing vectors...", indicator: "blue" });
+
+            // Use unified import_file for all formats (falls back to import_dxf for .dxf)
             frappe.call({
-                method: "libracad.api.import_dxf",
+                method: "libracad.api.import_file",
                 args: { file_url: file_url },
                 freeze: true,
-                freeze_message: "Importing DXF — parsing geometry, creating estimate and die layout...",
+                freeze_message: "Importing " + formatName + " — parsing geometry, creating estimate and die layout...",
                 callback: function (r) {
                     if (r.message && r.message.success) {
                         var d = r.message;
                         frappe.msgprint({
-                            title: "DXF Import Successful",
+                            title: formatName + " Import Successful",
                             indicator: "green",
                             message: [
+                                "<b>Source:</b> " + formatName + " file",
                                 "<b>Estimate:</b> " + d.estimate_name,
                                 "<b>Die Layout:</b> " + d.layout_name,
                                 "<b>Blank:</b> " + d.blank_length + '" x ' + d.blank_width + '"',
                                 "<b>Detected Style:</b> " + d.detected_style,
-                                "<b>Layers:</b> " + d.layers_found.join(", "),
+                                "<b>Layers:</b> " + (d.layers_found || []).join(", "),
                                 "<b>Entities:</b> " + d.total_entities,
                                 "",
                                 '<a href="/app/die-layout-editor?layout=' + d.layout_name + '">Open in Editor</a>',
@@ -1699,7 +1705,11 @@ DieLayoutEditor.prototype._importDXF = function () {
                     }
                 },
                 error: function () {
-                    frappe.msgprint({ title: "Import Failed", indicator: "red", message: "Could not parse the DXF file. Check format." });
+                    frappe.msgprint({
+                        title: "Import Failed", indicator: "red",
+                        message: "Could not parse the " + formatName + " file. Supported formats: " + supported.join(", ") +
+                            ". For EPS/AI files, try converting to SVG first.",
+                    });
                 },
             });
         },

@@ -590,3 +590,567 @@ def _dxf_to_fabric_canvas(msp, blank_height):
         "objects": objects,
     }
     return json.dumps(canvas)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  UNIFIED MULTI-FORMAT IMPORT — SVG, AI, EPS, PDF, DXF
+# ═══════════════════════════════════════════════════════════════════════════
+
+SUPPORTED_FORMATS = {
+    "dxf": "AutoCAD DXF",
+    "svg": "Scalable Vector Graphics",
+    "ai": "Adobe Illustrator",
+    "eps": "Encapsulated PostScript",
+    "pdf": "PDF (vector)",
+}
+
+# Color-to-layer mapping for SVG imports
+_COLOR_TO_LAYER = [
+    # (r_range, g_range, b_range, layer)
+    ((180, 255), (0, 80), (0, 80), "CUT"),        # Red
+    ((0, 80), (0, 80), (180, 255), "SCORE"),       # Blue
+    ((0, 120), (180, 255), (180, 255), "CREASE"),  # Cyan
+    ((0, 80), (140, 255), (0, 80), "DIMENSION"),   # Green
+]
+
+
+def _color_to_layer(color_str):
+    """Map an SVG stroke color string to a CAD layer name."""
+    if not color_str:
+        return "CUT"
+    color_str = color_str.strip().lower()
+
+    # Handle named colors
+    named = {
+        "red": "CUT", "blue": "SCORE", "cyan": "CREASE", "green": "DIMENSION",
+        "black": "CUT", "none": "CUT",
+    }
+    if color_str in named:
+        return named[color_str]
+
+    # Parse hex (#RRGGBB or #RGB)
+    r, g, b = 0, 0, 0
+    if color_str.startswith("#"):
+        hex_str = color_str[1:]
+        if len(hex_str) == 3:
+            hex_str = hex_str[0] * 2 + hex_str[1] * 2 + hex_str[2] * 2
+        if len(hex_str) == 6:
+            r, g, b = int(hex_str[0:2], 16), int(hex_str[2:4], 16), int(hex_str[4:6], 16)
+
+    # Parse rgb(r,g,b)
+    elif color_str.startswith("rgb"):
+        import re
+        nums = re.findall(r"[\d.]+", color_str)
+        if len(nums) >= 3:
+            r, g, b = int(float(nums[0])), int(float(nums[1])), int(float(nums[2]))
+
+    # Match to layer
+    for r_range, g_range, b_range, layer in _COLOR_TO_LAYER:
+        if r_range[0] <= r <= r_range[1] and g_range[0] <= g <= g_range[1] and b_range[0] <= b <= b_range[1]:
+            return layer
+
+    return "CUT"  # default
+
+
+@frappe.whitelist()
+def import_file(file_url):
+    """Universal CAD file import — supports DXF, SVG, AI, EPS, PDF.
+
+    Dispatches to format-specific parsers, all producing Fabric.js canvas JSON.
+    Creates Corrugated Estimate + Die Layout documents.
+    """
+    ext = file_url.rsplit(".", 1)[-1].lower()
+
+    if ext == "dxf":
+        return import_dxf(file_url)
+
+    if ext not in SUPPORTED_FORMATS:
+        frappe.throw(
+            f"Unsupported file format: .{ext}. "
+            f"Supported: {', '.join('.' + k for k in SUPPORTED_FORMATS)}"
+        )
+
+    # Read file content from Frappe
+    file_doc = frappe.get_doc("File", {"file_url": file_url})
+    file_content = file_doc.get_content()
+    if isinstance(file_content, str):
+        file_content = file_content.encode("utf-8")
+
+    # Convert to SVG content based on format
+    svg_content = None
+    source_format = ext
+
+    if ext == "svg":
+        svg_content = file_content.decode("utf-8", errors="replace")
+    elif ext == "ai":
+        svg_content = _extract_svg_from_ai(file_content)
+    elif ext == "eps":
+        svg_content = _convert_eps_to_svg(file_content)
+    elif ext == "pdf":
+        svg_content = _convert_pdf_to_svg(file_content)
+
+    if not svg_content:
+        frappe.throw(f"Could not extract vector data from .{ext} file.")
+
+    # Parse SVG → Fabric.js canvas JSON
+    canvas_json, blank_length, blank_width, detected_style = _svg_to_fabric_canvas(svg_content)
+
+    if not canvas_json:
+        frappe.throw("No geometry found in file.")
+
+    # Count objects
+    canvas_data = json.loads(canvas_json)
+    total_entities = len(canvas_data.get("objects", []))
+
+    # Detect layers present
+    layers_found = list(set(
+        obj.get("cadLayer", "CUT") for obj in canvas_data.get("objects", [])
+    ))
+
+    # Create Corrugated Estimate
+    est = frappe.get_doc({
+        "doctype": "Corrugated Estimate",
+        "box_style": detected_style if detected_style != "UNKNOWN" else "DIE-CUT",
+        "blank_length": blank_length,
+        "blank_width": blank_width,
+        "wall_type": "Single Wall",
+        "flute_type": "C",
+        "status": "Draft",
+    })
+    est.insert(ignore_permissions=True)
+
+    # Create Die Layout with canvas
+    layout_name = f"Imported {detected_style} {blank_length:.1f}x{blank_width:.1f}"
+    layout = frappe.get_doc({
+        "doctype": "Die Layout",
+        "layout_name": layout_name,
+        "corrugated_estimate": est.name,
+        "status": "Draft",
+        "canvas_json": canvas_json,
+        "canvas_version": 1,
+    })
+    layout.insert(ignore_permissions=True)
+
+    # Attach original file to layout
+    try:
+        frappe.get_doc({
+            "doctype": "File",
+            "file_url": file_url,
+            "attached_to_doctype": "Die Layout",
+            "attached_to_name": layout.name,
+        }).insert(ignore_permissions=True)
+    except Exception:
+        pass
+
+    frappe.db.commit()
+
+    return {
+        "success": True,
+        "estimate_name": est.name,
+        "layout_name": layout.name,
+        "blank_length": round(blank_length, 3),
+        "blank_width": round(blank_width, 3),
+        "detected_style": detected_style,
+        "source_format": source_format,
+        "layers_found": layers_found,
+        "total_entities": total_entities,
+    }
+
+
+# ─── SVG Parser ───────────────────────────────────────────────────────────────
+
+def _svg_to_fabric_canvas(svg_content):
+    """Parse SVG content into Fabric.js canvas JSON.
+
+    Returns: (canvas_json, blank_length, blank_width, detected_style)
+    Dimensions in inches (assuming SVG units are points at 72dpi, or px at 96dpi).
+    """
+    try:
+        from svgpathtools import svg2paths2
+        from io import StringIO
+    except ImportError:
+        frappe.throw("svgpathtools is not installed. Run: pip install svgpathtools")
+
+    import re
+    import math
+
+    # Write SVG to temp file (svgpathtools needs a file path)
+    tmp = tempfile.NamedTemporaryFile(suffix=".svg", delete=False, mode="w", encoding="utf-8")
+    tmp.write(svg_content)
+    tmp.close()
+
+    try:
+        paths, attributes, svg_attrs = svg2paths2(tmp.name)
+    except Exception as e:
+        os.unlink(tmp.name)
+        frappe.throw(f"Failed to parse SVG: {e}")
+
+    os.unlink(tmp.name)
+
+    if not paths:
+        return None, 0, 0, "UNKNOWN"
+
+    # Determine SVG viewport scale (convert to inches)
+    # Default: assume 72 DPI (standard PostScript/AI), so 1 unit = 1/72 inch
+    dpi = 72.0
+    vb = svg_attrs.get("viewBox", "")
+    svg_width = svg_attrs.get("width", "")
+    if "mm" in str(svg_width):
+        dpi = 25.4  # mm to inches: 1mm = 1/25.4 in
+    elif "cm" in str(svg_width):
+        dpi = 2.54
+    elif "in" in str(svg_width):
+        dpi = 1.0
+    elif "pt" in str(svg_width):
+        dpi = 72.0
+    else:
+        dpi = 72.0  # Default: points (AI/EPS standard)
+
+    sc = PIXELS_PER_UNIT  # 10 px per inch on Fabric canvas
+
+    # Collect all points for bounding box
+    all_points = []
+    segments_data = []  # (start, end, layer, color)
+
+    for path, attr in zip(paths, attributes):
+        stroke = attr.get("stroke", attr.get("style", ""))
+        # Extract stroke from style attribute
+        if "stroke:" in stroke:
+            match = re.search(r"stroke:\s*([^;]+)", stroke)
+            if match:
+                stroke = match.group(1).strip()
+
+        layer = _color_to_layer(stroke)
+
+        for seg in path:
+            # Linearize: sample points along segment
+            seg_len = seg.length()
+            if seg_len < 0.01:
+                continue
+
+            # Adaptive sampling: more points for curves
+            from svgpathtools import Line as SvgLine
+            if isinstance(seg, SvgLine):
+                pts = [seg.start, seg.end]
+            else:
+                # Curve: approximate with line segments
+                n_pts = max(2, min(50, int(seg_len / 2.0)))
+                pts = [seg.point(t) for t in [i / n_pts for i in range(n_pts + 1)]]
+
+            for i in range(len(pts) - 1):
+                p1 = pts[i]
+                p2 = pts[i + 1]
+                segments_data.append((p1, p2, layer))
+                all_points.append(p1)
+                all_points.append(p2)
+
+    if not all_points:
+        return None, 0, 0, "UNKNOWN"
+
+    # Bounding box
+    min_x = min(p.real for p in all_points)
+    max_x = max(p.real for p in all_points)
+    min_y = min(p.imag for p in all_points)
+    max_y = max(p.imag for p in all_points)
+
+    # Blank dimensions in inches
+    blank_length = (max_x - min_x) / dpi
+    blank_width = (max_y - min_y) / dpi
+
+    # Build Fabric.js objects
+    objects = []
+    for p1, p2, layer in segments_data:
+        color = LAYER_COLORS.get(layer, "#FF0000")
+        width = LAYER_WIDTHS.get(layer, 2)
+        dash = LAYER_DASH.get(layer)
+
+        x1 = (p1.real - min_x) / dpi * sc
+        y1 = (p1.imag - min_y) / dpi * sc
+        x2 = (p2.real - min_x) / dpi * sc
+        y2 = (p2.imag - min_y) / dpi * sc
+
+        obj = {
+            "type": "line",
+            "x1": round(x1, 2),
+            "y1": round(y1, 2),
+            "x2": round(x2, 2),
+            "y2": round(y2, 2),
+            "stroke": color,
+            "strokeWidth": width,
+            "selectable": True,
+            "cadLayer": layer,
+            "cadType": "imported",
+        }
+        if dash:
+            obj["strokeDashArray"] = dash
+        objects.append(obj)
+
+    # Detect box style from geometry
+    detected_style = _detect_style_from_segments(segments_data, blank_length, blank_width)
+
+    canvas_json = json.dumps({"version": "5.3.0", "objects": objects})
+    return canvas_json, round(blank_length, 4), round(blank_width, 4), detected_style
+
+
+def _detect_style_from_segments(segments, bl, bw):
+    """Guess box style from segment geometry."""
+    # Count approximate vertical score lines
+    v_scores = set()
+    for p1, p2, layer in segments:
+        if layer == "SCORE":
+            dx = abs(p1.real - p2.real)
+            dy = abs(p1.imag - p2.imag)
+            if dx < 1.0 and dy > 10.0:  # Vertical
+                v_scores.add(round(p1.real, 0))
+
+    if len(v_scores) >= 4:
+        return "RSC"
+    elif len(v_scores) == 3:
+        return "FOL"
+    elif len(v_scores) == 2:
+        return "TRAY"
+    elif len(v_scores) == 1:
+        return "BLISS"
+    return "DIE-CUT"
+
+
+# ─── AI Parser (Adobe Illustrator) ───────────────────────────────────────────
+
+def _extract_svg_from_ai(file_content):
+    """Extract embedded SVG/PDF content from Adobe Illustrator .ai files.
+
+    Modern AI files (CS9+/CC) are PDF files with an embedded SVG or
+    XMP metadata. We try multiple extraction strategies.
+    """
+    content_str = file_content.decode("latin-1", errors="replace")
+
+    # Strategy 1: Find embedded SVG (some AI files have literal SVG)
+    svg_start = content_str.find("<?xml")
+    if svg_start == -1:
+        svg_start = content_str.find("<svg")
+    if svg_start >= 0:
+        svg_end = content_str.find("</svg>", svg_start)
+        if svg_end > svg_start:
+            return content_str[svg_start:svg_end + 6]
+
+    # Strategy 2: AI v8+ files have PostScript with %%BeginData / %%EndData
+    # These contain path data in PostScript notation — parse key operators
+    if "%%Creator: Adobe Illustrator" in content_str or "%!PS-Adobe" in content_str:
+        return _parse_ai_postscript(content_str)
+
+    # Strategy 3: Try to convert as PDF (modern AI files ARE PDF)
+    if content_str.startswith("%PDF"):
+        return _convert_pdf_to_svg(file_content)
+
+    # Strategy 4: Try Ghostscript conversion
+    return _convert_via_ghostscript(file_content, ".ai")
+
+
+def _parse_ai_postscript(ps_content):
+    """Parse Adobe Illustrator PostScript path data into SVG.
+
+    AI PostScript uses operators: m (moveto), l/L (lineto), c/C (curveto),
+    v/V (curveto variant), y/Y (curveto variant), and painting operators
+    S (stroke), s (close+stroke), f/F (fill), b/B (fill+stroke), n (discard).
+    """
+    import re
+
+    paths_svg = []
+    current_path = []
+    current_x, current_y = 0, 0
+    in_path = False
+
+    # Find all path operations between color setting and painting operators
+    # AI format: color operators (k, K, XA) followed by path ops, ended by S/s/f/F/b/B/n
+    lines = ps_content.split("\n")
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("%"):
+            continue
+
+        tokens = line.split()
+        if not tokens:
+            continue
+
+        op = tokens[-1]
+
+        # moveto
+        if op == "m" and len(tokens) >= 3:
+            try:
+                x, y = float(tokens[-3]), float(tokens[-2])
+                current_path.append(f"M {x} {y}")
+                current_x, current_y = x, y
+                in_path = True
+            except (ValueError, IndexError):
+                pass
+
+        # lineto
+        elif op in ("l", "L") and len(tokens) >= 3:
+            try:
+                x, y = float(tokens[-3]), float(tokens[-2])
+                current_path.append(f"L {x} {y}")
+                current_x, current_y = x, y
+            except (ValueError, IndexError):
+                pass
+
+        # curveto
+        elif op in ("c", "C") and len(tokens) >= 7:
+            try:
+                x1, y1 = float(tokens[-7]), float(tokens[-6])
+                x2, y2 = float(tokens[-5]), float(tokens[-4])
+                x, y = float(tokens[-3]), float(tokens[-2])
+                current_path.append(f"C {x1} {y1} {x2} {y2} {x} {y}")
+                current_x, current_y = x, y
+            except (ValueError, IndexError):
+                pass
+
+        # curveto variant (v/V: first control point = current point)
+        elif op in ("v", "V") and len(tokens) >= 5:
+            try:
+                x2, y2 = float(tokens[-5]), float(tokens[-4])
+                x, y = float(tokens[-3]), float(tokens[-2])
+                current_path.append(f"C {current_x} {current_y} {x2} {y2} {x} {y}")
+                current_x, current_y = x, y
+            except (ValueError, IndexError):
+                pass
+
+        # curveto variant (y/Y: last control point = endpoint)
+        elif op in ("y", "Y") and len(tokens) >= 5:
+            try:
+                x1, y1 = float(tokens[-5]), float(tokens[-4])
+                x, y = float(tokens[-3]), float(tokens[-2])
+                current_path.append(f"C {x1} {y1} {x} {y} {x} {y}")
+                current_x, current_y = x, y
+            except (ValueError, IndexError):
+                pass
+
+        # Painting operators — end of path
+        elif op in ("S", "s", "f", "F", "b", "B", "n", "N"):
+            if current_path:
+                if op in ("s", "b", "B"):
+                    current_path.append("Z")  # close path
+                d = " ".join(current_path)
+                color = "#FF0000"  # Default to CUT (red) for AI
+                paths_svg.append(f'<path d="{d}" stroke="{color}" fill="none" stroke-width="1"/>')
+                current_path = []
+                in_path = False
+
+    if not paths_svg:
+        return None
+
+    # Build SVG
+    svg = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    svg += '<svg xmlns="http://www.w3.org/2000/svg">\n'
+    svg += "\n".join(paths_svg)
+    svg += "\n</svg>"
+    return svg
+
+
+# ─── EPS Parser ───────────────────────────────────────────────────────────────
+
+def _convert_eps_to_svg(file_content):
+    """Convert EPS to SVG using Ghostscript or PostScript parsing fallback."""
+    # Try Ghostscript first
+    svg = _convert_via_ghostscript(file_content, ".eps")
+    if svg:
+        return svg
+
+    # Fallback: parse EPS PostScript (same format as AI)
+    content_str = file_content.decode("latin-1", errors="replace")
+    if "%!PS-Adobe" in content_str or "%%BoundingBox" in content_str:
+        return _parse_ai_postscript(content_str)
+
+    frappe.throw(
+        "Could not parse EPS file. Ghostscript is not available on this server. "
+        "Please convert to SVG or DXF before uploading."
+    )
+
+
+# ─── PDF Vector Extractor ────────────────────────────────────────────────────
+
+def _convert_pdf_to_svg(file_content):
+    """Extract vector paths from PDF using PyMuPDF or Ghostscript."""
+    # Try PyMuPDF (fitz) first
+    try:
+        import fitz  # PyMuPDF
+        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        tmp.write(file_content)
+        tmp.close()
+
+        doc = fitz.open(tmp.name)
+        page = doc[0]
+        svg_content = page.get_svg_image()
+        doc.close()
+        os.unlink(tmp.name)
+
+        if svg_content and "<path" in svg_content:
+            return svg_content
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Try Ghostscript
+    svg = _convert_via_ghostscript(file_content, ".pdf")
+    if svg:
+        return svg
+
+    frappe.throw(
+        "Could not extract vectors from PDF. "
+        "Neither PyMuPDF nor Ghostscript is available. "
+        "Please convert to SVG or DXF before uploading."
+    )
+
+
+# ─── Ghostscript Helper ──────────────────────────────────────────────────────
+
+def _convert_via_ghostscript(file_content, suffix):
+    """Try to convert a file to SVG using Ghostscript (gs or gswin64c)."""
+    import subprocess
+    import shutil
+
+    # Find Ghostscript binary
+    gs_bin = None
+    for name in ("gs", "gswin64c", "gswin32c"):
+        if shutil.which(name):
+            gs_bin = name
+            break
+
+    if not gs_bin:
+        return None
+
+    # Write input file
+    tmp_in = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp_in.write(file_content)
+    tmp_in.close()
+
+    tmp_out = tempfile.NamedTemporaryFile(suffix=".svg", delete=False)
+    tmp_out.close()
+
+    try:
+        result = subprocess.run(
+            [gs_bin, "-dBATCH", "-dNOPAUSE", "-dNOSAFER",
+             "-sDEVICE=svg", f"-sOutputFile={tmp_out.name}",
+             "-dFirstPage=1", "-dLastPage=1",
+             tmp_in.name],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            with open(tmp_out.name, "r", encoding="utf-8", errors="replace") as f:
+                svg_content = f.read()
+            if "<svg" in svg_content:
+                return svg_content
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    finally:
+        try:
+            os.unlink(tmp_in.name)
+        except Exception:
+            pass
+        try:
+            os.unlink(tmp_out.name)
+        except Exception:
+            pass
+
+    return None
