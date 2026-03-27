@@ -1,5 +1,7 @@
 import frappe
 import json
+import os
+import tempfile
 
 
 @frappe.whitelist()
@@ -261,3 +263,291 @@ def export_dxf(layout_name):
     os.unlink(tmp_path)
 
     return file_doc.file_url
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  DXF IMPORT — Parse DXF file and create Estimate + Die Layout
+# ═══════════════════════════════════════════════════════════════════════════
+
+LAYER_COLORS = {
+    "CUT": "#FF0000", "SCORE": "#0000FF", "CREASE": "#00CCCC",
+    "DIMENSION": "#00AA00", "ANNOTATION": "#888888", "TITLE": "#888888",
+}
+LAYER_WIDTHS = {"CUT": 2, "SCORE": 2, "CREASE": 1.5, "DIMENSION": 1, "ANNOTATION": 1}
+LAYER_DASH = {"SCORE": [10, 5], "CREASE": [5, 5]}
+PIXELS_PER_UNIT = 10
+
+
+@frappe.whitelist()
+def import_dxf(file_url):
+    """Import a DXF file: parse geometry, create Estimate + Die Layout with canvas.
+
+    Args:
+        file_url: Frappe file URL (e.g. /private/files/box.dxf)
+
+    Returns dict with estimate_name, layout_name, dimensions, detected style.
+    """
+    try:
+        import ezdxf
+    except ImportError:
+        frappe.throw("ezdxf not installed.")
+
+    # Read file content from Frappe
+    file_doc = frappe.get_doc("File", {"file_url": file_url})
+    file_content = file_doc.get_content()
+
+    # Write to temp for ezdxf
+    tmp = tempfile.NamedTemporaryFile(suffix=".dxf", delete=False)
+    tmp.write(file_content if isinstance(file_content, bytes) else file_content.encode())
+    tmp.close()
+
+    try:
+        doc = ezdxf.readfile(tmp.name)
+    except Exception as e:
+        os.unlink(tmp.name)
+        frappe.throw(f"Failed to parse DXF: {e}")
+
+    msp = doc.modelspace()
+
+    # Extract layers present
+    layers_found = list(set(e.dxf.layer for e in msp))
+
+    # Extract blank dimensions from CUT layer bounding box
+    blank_length, blank_width = _extract_blank_dims(msp)
+
+    # Detect box style
+    detected_style = _detect_box_style(msp, layers_found)
+
+    # Convert all entities to Fabric.js canvas JSON
+    canvas_json = _dxf_to_fabric_canvas(msp, blank_width)
+
+    # Count entities
+    entity_counts = {}
+    for e in msp:
+        t = e.dxftype()
+        entity_counts[t] = entity_counts.get(t, 0) + 1
+
+    os.unlink(tmp.name)
+
+    # Create Corrugated Estimate
+    est = frappe.get_doc({
+        "doctype": "Corrugated Estimate",
+        "box_style": detected_style if detected_style != "UNKNOWN" else "DIE-CUT",
+        "blank_length": blank_length,
+        "blank_width": blank_width,
+        "wall_type": "Single Wall",
+        "flute_type": "C",
+        "status": "Draft",
+    })
+    est.insert(ignore_permissions=True)
+
+    # Create Die Layout with canvas
+    layout = frappe.get_doc({
+        "doctype": "Die Layout",
+        "layout_name": f"Imported {detected_style} {blank_length:.1f}x{blank_width:.1f}",
+        "corrugated_estimate": est.name,
+        "status": "Draft",
+        "canvas_json": canvas_json,
+        "canvas_version": 1,
+    })
+    layout.insert(ignore_permissions=True)
+
+    # Attach original DXF to layout
+    imported_file = frappe.get_doc({
+        "doctype": "File",
+        "file_url": file_url,
+        "attached_to_doctype": "Die Layout",
+        "attached_to_name": layout.name,
+    })
+    try:
+        imported_file.insert(ignore_permissions=True)
+    except Exception:
+        pass
+
+    frappe.db.commit()
+
+    return {
+        "success": True,
+        "estimate_name": est.name,
+        "layout_name": layout.name,
+        "blank_length": round(blank_length, 3),
+        "blank_width": round(blank_width, 3),
+        "detected_style": detected_style,
+        "layers_found": layers_found,
+        "entity_counts": entity_counts,
+        "total_entities": sum(entity_counts.values()),
+    }
+
+
+def _extract_blank_dims(msp):
+    """Extract blank dimensions from CUT layer bounding box."""
+    from ezdxf import bbox as ezdxf_bbox
+
+    cut_entities = list(msp.query('*[layer=="CUT"]'))
+    if not cut_entities:
+        # Fall back to all entities
+        cut_entities = list(msp)
+
+    cache = ezdxf_bbox.Cache()
+    box = ezdxf_bbox.extents(cut_entities, cache=cache)
+
+    if not box.has_data:
+        return 0, 0
+
+    return round(box.size[0], 4), round(box.size[1], 4)
+
+
+def _detect_box_style(msp, layers):
+    """Detect box style from TITLE text or geometry patterns."""
+    # Check TITLE/ANNOTATION text first
+    for e in msp:
+        if e.dxftype() in ("TEXT", "MTEXT") and e.dxf.layer in ("TITLE", "ANNOTATION", "DIMENSION"):
+            text = ""
+            if e.dxftype() == "TEXT":
+                text = e.dxf.text.upper()
+            elif e.dxftype() == "MTEXT":
+                text = e.text.upper() if hasattr(e, "text") else ""
+
+            for style in ("RSC", "FOL", "HSC", "TRAY", "BLISS", "SFF"):
+                if style in text:
+                    return style
+
+    # Count score lines to guess style
+    v_scores = set()
+    for e in msp.query('*[layer=="SCORE"]'):
+        if e.dxftype() == "LINE":
+            if abs(e.dxf.start[0] - e.dxf.end[0]) < 0.01:  # Vertical
+                v_scores.add(round(e.dxf.start[0], 2))
+
+    if len(v_scores) >= 4:
+        return "RSC"
+    elif len(v_scores) == 3:
+        return "FOL"
+    elif len(v_scores) == 2:
+        return "TRAY"
+
+    return "DIE-CUT"
+
+
+def _dxf_to_fabric_canvas(msp, blank_height):
+    """Convert all DXF entities to Fabric.js canvas JSON."""
+    from ezdxf import bbox as ezdxf_bbox
+
+    all_entities = list(msp)
+    if not all_entities:
+        return json.dumps({"version": "5.3.0", "objects": []})
+
+    cache = ezdxf_bbox.Cache()
+    box = ezdxf_bbox.extents(all_entities, cache=cache)
+    if not box.has_data:
+        return json.dumps({"version": "5.3.0", "objects": []})
+
+    # Y-flip: DXF is Y-up, Fabric is Y-down
+    max_y = box.extmax[1]
+    min_x = box.extmin[0]
+    sc = PIXELS_PER_UNIT
+
+    objects = []
+    for e in all_entities:
+        layer = e.dxf.layer if hasattr(e.dxf, "layer") else "CUT"
+        color = LAYER_COLORS.get(layer, "#888888")
+        width = LAYER_WIDTHS.get(layer, 1)
+        dash = LAYER_DASH.get(layer)
+
+        try:
+            if e.dxftype() == "LINE":
+                obj = {
+                    "type": "line",
+                    "x1": (e.dxf.start[0] - min_x) * sc,
+                    "y1": (max_y - e.dxf.start[1]) * sc,
+                    "x2": (e.dxf.end[0] - min_x) * sc,
+                    "y2": (max_y - e.dxf.end[1]) * sc,
+                    "stroke": color,
+                    "strokeWidth": width,
+                    "selectable": True,
+                    "cadLayer": layer,
+                    "cadType": "imported",
+                }
+                if dash:
+                    obj["strokeDashArray"] = dash
+                objects.append(obj)
+
+            elif e.dxftype() == "LWPOLYLINE":
+                pts = list(e.get_points(format="xy"))
+                for i in range(len(pts) - 1):
+                    obj = {
+                        "type": "line",
+                        "x1": (pts[i][0] - min_x) * sc,
+                        "y1": (max_y - pts[i][1]) * sc,
+                        "x2": (pts[i + 1][0] - min_x) * sc,
+                        "y2": (max_y - pts[i + 1][1]) * sc,
+                        "stroke": color,
+                        "strokeWidth": width,
+                        "selectable": True,
+                        "cadLayer": layer,
+                        "cadType": "imported",
+                    }
+                    if dash:
+                        obj["strokeDashArray"] = dash
+                    objects.append(obj)
+                # Close if closed polyline
+                if e.close and len(pts) > 2:
+                    obj = {
+                        "type": "line",
+                        "x1": (pts[-1][0] - min_x) * sc,
+                        "y1": (max_y - pts[-1][1]) * sc,
+                        "x2": (pts[0][0] - min_x) * sc,
+                        "y2": (max_y - pts[0][1]) * sc,
+                        "stroke": color,
+                        "strokeWidth": width,
+                        "selectable": True,
+                        "cadLayer": layer,
+                        "cadType": "imported",
+                    }
+                    if dash:
+                        obj["strokeDashArray"] = dash
+                    objects.append(obj)
+
+            elif e.dxftype() == "CIRCLE":
+                cx = (e.dxf.center[0] - min_x) * sc
+                cy = (max_y - e.dxf.center[1]) * sc
+                r = e.dxf.radius * sc
+                objects.append({
+                    "type": "circle",
+                    "left": cx - r,
+                    "top": cy - r,
+                    "radius": r,
+                    "fill": "transparent",
+                    "stroke": color,
+                    "strokeWidth": width,
+                    "selectable": True,
+                    "cadLayer": layer,
+                    "cadType": "imported",
+                })
+
+            elif e.dxftype() in ("TEXT", "MTEXT"):
+                text_str = e.dxf.text if e.dxftype() == "TEXT" else (e.text if hasattr(e, "text") else "")
+                if not text_str:
+                    continue
+                insert = e.dxf.insert if hasattr(e.dxf, "insert") else (0, 0, 0)
+                height = e.dxf.height if hasattr(e.dxf, "height") else 0.15
+                objects.append({
+                    "type": "i-text",
+                    "text": text_str,
+                    "left": (insert[0] - min_x) * sc,
+                    "top": (max_y - insert[1]) * sc,
+                    "fontSize": max(height * sc, 8),
+                    "fill": color,
+                    "fontFamily": "monospace",
+                    "selectable": True,
+                    "cadLayer": layer,
+                    "cadType": "imported",
+                })
+        except Exception:
+            continue  # Skip unparseable entities
+
+    canvas = {
+        "version": "5.3.0",
+        "objects": objects,
+    }
+    return json.dumps(canvas)

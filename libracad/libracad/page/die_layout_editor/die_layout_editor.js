@@ -328,6 +328,9 @@ DieLayoutEditor.prototype._bindToolbar = function () {
         });
     });
     this.$container.find(".dle-export-svg").on("click", function () { self._exportSVG(); });
+
+    // Import DXF button
+    this.$container.find(".dle-btn-import-dxf").on("click", function () { self._importDXF(); });
     this.$container.find(".dle-export-png").on("click", function () { self._exportPNG(); });
 };
 
@@ -1479,4 +1482,58 @@ DieLayoutEditor.prototype._renderPallet3D = function (best, boxH, layers, pallet
 
     svg += '</svg>';
     this.$container.find(".dle-pallet-3d").html(svg);
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DXF IMPORT — Upload and parse DXF file
+// ═══════════════════════════════════════════════════════════════════════════
+
+DieLayoutEditor.prototype._importDXF = function () {
+    var self = this;
+
+    // Use Frappe's file upload dialog
+    new frappe.ui.FileUploader({
+        doctype: "Die Layout",
+        docname: self.layoutName || undefined,
+        restrictions: {
+            allowed_file_types: [".dxf"],
+        },
+        on_success: function (file_doc) {
+            var file_url = file_doc.file_url;
+            frappe.show_alert({ message: "DXF uploaded. Parsing...", indicator: "blue" });
+
+            frappe.call({
+                method: "libracad.api.import_dxf",
+                args: { file_url: file_url },
+                freeze: true,
+                freeze_message: "Importing DXF — parsing geometry, creating estimate and die layout...",
+                callback: function (r) {
+                    if (r.message && r.message.success) {
+                        var d = r.message;
+                        frappe.msgprint({
+                            title: "DXF Import Successful",
+                            indicator: "green",
+                            message: [
+                                "<b>Estimate:</b> " + d.estimate_name,
+                                "<b>Die Layout:</b> " + d.layout_name,
+                                "<b>Blank:</b> " + d.blank_length + '" x ' + d.blank_width + '"',
+                                "<b>Detected Style:</b> " + d.detected_style,
+                                "<b>Layers:</b> " + d.layers_found.join(", "),
+                                "<b>Entities:</b> " + d.total_entities,
+                                "",
+                                '<a href="/app/die-layout-editor?layout=' + d.layout_name + '">Open in Editor</a>',
+                            ].join("<br>"),
+                        });
+
+                        // Navigate to the new layout
+                        self.layoutName = d.layout_name;
+                        self._loadLayout(d.layout_name);
+                    }
+                },
+                error: function () {
+                    frappe.msgprint({ title: "Import Failed", indicator: "red", message: "Could not parse the DXF file. Check format." });
+                },
+            });
+        },
+    });
 };
