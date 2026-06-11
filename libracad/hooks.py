@@ -6,6 +6,10 @@ app_email = "admin@welchwyse.com"
 app_license = "MIT"
 app_version = "0.1.0"
 
+# LibraCAD injects into the Corrugated Estimate doctype and its Die Layout links
+# back to it, so corrugated_estimating must be present (it pulls erpnext in turn).
+required_apps = ["frappe", "erpnext", "corrugated_estimating"]
+
 # ── JS includes ──────────────────────────────────────────────────────────────
 # app_include_js = "/assets/libracad/js/libracad.bundle.js"
 
